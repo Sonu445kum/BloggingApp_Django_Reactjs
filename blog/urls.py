@@ -1,18 +1,37 @@
 from django.urls import path
-from .views import RegisterView, UserDetailView, BlogListCreateView, BlogDetailView, CategoryListCreateView, CommentListCreateView
+from . import views
 
 urlpatterns = [
-    # Authentication
-    path('auth/register/', RegisterView.as_view(), name='register'),
-    path('auth/me/', UserDetailView.as_view(), name='user_detail'),
+    # -------------------------
+    # Auth
+    # -------------------------
+    path('auth/register/', views.register_view, name='register'),
+    path('auth/me/', views.current_user_view, name='current_user'),
 
-    # Blog APIs
-    path('blogs/', BlogListCreateView.as_view(), name='blog_list_create'),
-    path('blogs/<int:pk>/', BlogDetailView.as_view(), name='blog_detail'),
+    # -------------------------
+    # Blogs
+    # -------------------------
+    path('blogs/', views.blog_list_view, name='blog_list'),
+    path('blogs/<int:pk>/', views.blog_detail_view, name='blog_detail'),
+    path('blogs/create/', views.blog_create_view, name='blog_create'),
+    path('blogs/<int:pk>/edit/', views.blog_update_delete_view, name='blog_update_delete'),
 
-    # Category APIs
-    path('categories/', CategoryListCreateView.as_view(), name='category_list_create'),
+    # -------------------------
+    # Categories
+    # -------------------------
+    path('categories/', views.category_list_view, name='category_list'),
+    path('categories/create/', views.category_create_view, name='category_create'),
+    path('categories/<int:pk>/edit/', views.category_update_delete_view, name='category_update_delete'),
 
-    # Comment APIs
-    path('blogs/<int:blog_id>/comments/', CommentListCreateView.as_view(), name='comment_list_create'),
+    # -------------------------
+    # Comments
+    # -------------------------
+    path('blogs/<int:blog_id>/comments/', views.comment_list_view, name='comment_list'),
+    path('blogs/<int:blog_id>/comments/create/', views.comment_create_view, name='comment_create'),
+    path('comments/<int:pk>/delete/', views.comment_delete_view, name='comment_delete'),
+
+    # -------------------------
+    # Admin Stats
+    # -------------------------
+    path('stats/', views.stats_view, name='stats'),
 ]
