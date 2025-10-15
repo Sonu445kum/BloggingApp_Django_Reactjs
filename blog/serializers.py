@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, Blog, Category, Comment
+from .models import CustomUser, Blog, Category, Comment,Like
 from django.contrib.auth.password_validation import validate_password
 
 # User Registration Serializer
@@ -50,3 +50,9 @@ class CommentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Comment
         fields = '__all__'
+
+# Like Serializer
+class LikeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Like
+        fields = ['id', 'user', 'blog', 'created_at']

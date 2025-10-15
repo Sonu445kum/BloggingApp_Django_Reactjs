@@ -30,6 +30,11 @@ urlpatterns = [
     path('blogs/<int:blog_id>/comments/create/', views.comment_create_view, name='comment_create'),
     path('comments/<int:pk>/delete/', views.comment_delete_view, name='comment_delete'),
 
+
+    # Likes
+    path('likes/', views.like_list_create, name='like-list-create'),
+    path('likes/<int:pk>/', views.like_detail, name='like-detail'),
+
     # -------------------------
     # Admin Stats
     # -------------------------
