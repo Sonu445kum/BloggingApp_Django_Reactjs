@@ -1,52 +1,56 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, serializers
 from django.shortcuts import get_object_or_404
-from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
+from django.utils import timezone
 from django.core.mail import send_mail
 from django.conf import settings
 from django.urls import reverse
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.contrib.sites.shortcuts import get_current_site
+
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
-from .models import CustomUser, Profile, Category, Blog, Comment, Reaction, Notification,UserActivity 
+from .models import (
+    CustomUser, Profile, Category, Blog, BlogMedia, Comment,
+    Reaction, Notification, UserActivity
+)
 from .serializers import (
     UserSerializer, ProfileSerializer, CategorySerializer, BlogSerializer,
-    CommentSerializer, ReactionSerializer, NotificationSerializer, RegisterSerializer
+    BlogMediaSerializer, CommentSerializer, ReactionSerializer, NotificationSerializer,
+    RegisterSerializer
 )
-
-
 from .utils import profile_completion
 
-
-
+# ----------------------------
+# USER ACTIVITY LOGS
+# ----------------------------
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def activity_logs(request):
-    """
-    Returns the activity logs for the authenticated user,
-    ordered by latest timestamp first.
-    """
     logs = UserActivity.objects.filter(user=request.user).order_by('-timestamp')
     data = [{"action": log.action, "time": log.timestamp} for log in logs]
     return Response(data)
 
+
+# ----------------------------
+# PROFILE COMPLETION STATUS
+# ----------------------------
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def profile_status(request):
     user = request.user
     completion = profile_completion(user)
     return Response({"profile_completion": completion})
 
+
 # ----------------------------
 # REAL-TIME NOTIFICATIONS UTILS
 # ----------------------------
 def send_notification_to_user(user_id, message):
-    """
-    Real-time notification via Django Channels WebSocket
-    """
     channel_layer = get_channel_layer()
     async_to_sync(channel_layer.group_send)(
         f"user_{user_id}",
@@ -63,7 +67,7 @@ def send_notification_to_user(user_id, message):
 def send_verification_email(user, request):
     token = RefreshToken.for_user(user).access_token
     current_site = get_current_site(request).domain
-    relative_link = reverse('email-verify')
+    relative_link = reverse('verify-email')
     absurl = f"http://{current_site}{relative_link}?token={str(token)}"
     email_body = f"Hi {user.username},\nUse the link below to verify your email:\n{absurl}"
     send_mail(
@@ -76,7 +80,7 @@ def send_verification_email(user, request):
 
 
 # ----------------------------
-# AUTH
+# AUTHENTICATION
 # ----------------------------
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -107,7 +111,7 @@ def verify_email(request):
             user.email_verified = True
             user.save()
         return Response({'message': 'Email successfully verified'}, status=status.HTTP_200_OK)
-    except Exception as e:
+    except Exception:
         return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -183,41 +187,6 @@ def change_password(request):
 # ----------------------------
 # BLOGS
 # ----------------------------
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def blog_list_view(request):
-    blogs = Blog.objects.all().order_by('-created_at')
-    serializer = BlogSerializer(blogs, many=True)
-    return Response(serializer.data)
-
-
-@api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
-def blog_detail_view(request, pk):
-    blog = get_object_or_404(Blog, pk=pk)
-
-    if request.method == 'GET':
-        blog.views += 1
-        blog.save()
-        serializer = BlogSerializer(blog)
-        return Response(serializer.data)
-
-    elif request.method == 'PUT':
-        if blog.author != request.user:
-            return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
-        serializer = BlogSerializer(blog, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    elif request.method == 'DELETE':
-        if blog.author != request.user:
-            return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
-        blog.delete()
-        return Response({'message': 'Blog deleted'}, status=status.HTTP_204_NO_CONTENT)
-
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def blog_create_view(request):
@@ -228,23 +197,79 @@ def blog_create_view(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['PUT', 'DELETE'])
+@api_view(['PUT'])
 @permission_classes([IsAuthenticated])
-def blog_update_delete_view(request, pk):
+def blog_update_view(request, pk):
     blog = get_object_or_404(Blog, pk=pk)
     if blog.author != request.user:
-        return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
+        return Response({'error': "You cannot edit someone else's blog"}, status=status.HTTP_403_FORBIDDEN)
 
-    if request.method == 'PUT':
-        serializer = BlogSerializer(blog, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    serializer = BlogSerializer(blog, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    elif request.method == 'DELETE':
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def blog_list_view(request):
+    now = timezone.now()
+    blogs = Blog.objects.filter(status='published').filter(
+        models.Q(published_at__lte=now) | models.Q(published_at__isnull=True)
+    ).order_by('-published_at')
+    serializer = BlogSerializer(blogs, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def trending_blogs_view(request):
+    blogs = Blog.objects.filter(status='published').order_by('-views', '-likes', '-comments_count')[:5]
+    serializer = BlogSerializer(blogs, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def draft_blogs_view(request):
+    blogs = Blog.objects.filter(author=request.user, status='draft').order_by('-created_at')
+    serializer = BlogSerializer(blogs, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def blog_detail_view(request, pk):
+    blog = get_object_or_404(Blog, pk=pk)
+
+    if request.method == 'GET':
+        blog.views += 1
+        blog.save()
+        serializer = BlogSerializer(blog)
+        return Response(serializer.data)
+
+    if request.method == 'DELETE':
+        if blog.author != request.user:
+            return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
         blog.delete()
         return Response({'message': 'Blog deleted'}, status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def blog_media_upload_view(request):
+    blog_id = request.data.get('blog')
+    try:
+        blog = Blog.objects.get(id=blog_id, author=request.user)
+    except Blog.DoesNotExist:
+        return Response({'error': 'Blog not found or not owned by user'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = BlogMediaSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save(blog=blog)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 # ----------------------------

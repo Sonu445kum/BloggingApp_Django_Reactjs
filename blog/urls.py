@@ -7,14 +7,13 @@ urlpatterns = [
     # -------------------------
     path('auth/register/', views.register_view, name='register'),
     path('auth/me/', views.current_user_view, name='current_user'),
-    path('auth/email-verify/', views.verify_email, name='email-verify'),
+    path('auth/email-verify/', views.verify_email, name='verify-email'),
     path('auth/request-password-reset/', views.request_password_reset, name='request_password_reset'),
     path('auth/reset-password/', views.reset_password, name='reset_password'),
     path('auth/change-password/', views.change_password, name='change_password'),
 
     # -------------------------
-    # Users Activity
-
+    # PROFILE & USER ACTIVITY
     # -------------------------
     path('profile-status/', views.profile_status, name='profile-status'),
     path('activity-logs/', views.activity_logs, name='activity-logs'),
@@ -23,9 +22,12 @@ urlpatterns = [
     # BLOGS
     # -------------------------
     path('blogs/', views.blog_list_view, name='blog_list'),
-    path('blogs/<int:pk>/', views.blog_detail_view, name='blog_detail'),
+    path('blogs/trending/', views.trending_blogs_view, name='trending_blogs'),
+    path('blogs/drafts/', views.draft_blogs_view, name='draft_blogs'),
     path('blogs/create/', views.blog_create_view, name='blog_create'),
-    path('blogs/<int:pk>/edit/', views.blog_update_delete_view, name='blog_update_delete'),
+    path('blogs/<int:pk>/', views.blog_detail_view, name='blog_detail'),
+    path('blogs/<int:pk>/edit/', views.blog_update_view, name='blog_update'),
+    path('blogs/media/upload/', views.blog_media_upload_view, name='blog_media_upload'),
 
     # -------------------------
     # CATEGORIES

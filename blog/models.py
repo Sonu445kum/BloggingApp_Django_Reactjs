@@ -1,10 +1,9 @@
-# blog_project/models.py
-
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from taggit.managers import TaggableManager
-
-
+from django.utils import timezone
+from django_ckeditor_5.fields import CKEditor5Field
+from markdownx.models import MarkdownxField
 
 # ----------------------------
 # USER & PROFILE
@@ -21,12 +20,11 @@ class CustomUser(AbstractUser):
     def __str__(self):
         return self.username
 
-# User Activity
+
 class UserActivity(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     action = models.CharField(max_length=255)
     timestamp = models.DateTimeField(auto_now_add=True)
-
 
 
 class Profile(models.Model):
@@ -40,13 +38,13 @@ class Profile(models.Model):
     def __str__(self):
         return f"{self.user.username}'s profile"
 
-
 # ----------------------------
 # CATEGORY & BLOG
 # ----------------------------
 class Category(models.Model):
     name = models.CharField(max_length=50, unique=True)
-    slug = models.SlugField(unique=True)
+    slug = models.SlugField(unique=True, blank=True, null=True)
+
 
     def __str__(self):
         return self.name
@@ -60,20 +58,53 @@ class Blog(models.Model):
 
     author = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='blogs')
     title = models.CharField(max_length=255)
-    content = models.TextField()
+    content = CKEditor5Field('Content', config_name='default')
+    markdown_content = MarkdownxField(blank=True, null=True)  # Markdown support
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='blogs')
     tags = TaggableManager()
     featured_image = models.ImageField(upload_to='blogs/', blank=True, null=True)
     attachments = models.FileField(upload_to='blog_files/', blank=True, null=True)
+
     views = models.PositiveIntegerField(default=0)
-    publish_at = models.DateTimeField(null=True, blank=True)
+    likes = models.PositiveIntegerField(default=0)
+    comments_count = models.PositiveIntegerField(default=0)
+    is_featured = models.BooleanField(default=False)
+
+    publish_at = models.DateTimeField(null=True, blank=True)  # Scheduled publishing
+    published_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.title
 
+    def publish(self):
+        """Publish immediately"""
+        self.status = 'published'
+        self.published_at = timezone.now()
+        self.save()
+
+    def is_scheduled(self):
+        """Check if blog is scheduled for future"""
+        return self.publish_at and self.publish_at > timezone.now()
+
+    def save(self, *args, **kwargs):
+        """Auto-publish if publish_at is in the past"""
+        if self.publish_at and self.publish_at <= timezone.now():
+            self.status = 'published'
+            self.published_at = timezone.now()
+        super().save(*args, **kwargs)
+
+
+# ----------------------------
+# BLOG MEDIA
+# ----------------------------
+class BlogMedia(models.Model):
+    blog = models.ForeignKey(Blog, on_delete=models.CASCADE, related_name='media')
+    file = models.FileField(upload_to='blog_media/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
 
 # ----------------------------
 # COMMENTS

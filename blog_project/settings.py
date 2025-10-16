@@ -45,6 +45,8 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.google',
     'allauth.socialaccount.providers.facebook',
     'allauth.socialaccount.providers.github',
+    "django_ckeditor_5",
+    
 ]
 
 # Site id
@@ -181,8 +183,14 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 # allauth settings
-ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_SIGNUP_FIELDS = ['email*', 'username*', 'password1*', 'password2*']
 ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/'
+
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, message=".*CKEditor 4.*")
+warnings.filterwarnings("ignore", category=UserWarning, message=".*MySQL does not support unique constraints with conditions.*")
+
 
