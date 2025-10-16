@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     'corsheaders',            # CORS
     'blog',                   # Our app
     'taggit',
+    'channels',
 ]
 
 MIDDLEWARE = [
@@ -64,6 +65,17 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'blog_project.wsgi.application'
+
+
+# Channels Layer
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+        },
+    },
+}
 
 
 # Database
