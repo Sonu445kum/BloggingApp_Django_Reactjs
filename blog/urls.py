@@ -2,11 +2,21 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    
+    # AUTH - Password Reset & Change
+    # -------------------------
+    path('auth/password-reset/request/', views.request_password_reset, name='request_password_reset'),
+    path('auth/password-reset/confirm/', views.reset_password, name='reset_password'),
+    path('auth/password-change/', views.change_password, name='change_password'),
+    
     # -------------------------
     # AUTH
     # -------------------------
+    # -------------------------
+
     path('auth/register/', views.register_view, name='register'),
     path('auth/me/', views.current_user_view, name='current_user'),
+    path('auth/email-verify/', views.verify_email, name='email-verify'),
 
     # -------------------------
     # BLOGS
