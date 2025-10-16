@@ -12,12 +12,33 @@ from django.contrib.sites.shortcuts import get_current_site
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
-from .models import CustomUser, Profile, Category, Blog, Comment, Reaction, Notification
+from .models import CustomUser, Profile, Category, Blog, Comment, Reaction, Notification,UserActivity 
 from .serializers import (
     UserSerializer, ProfileSerializer, CategorySerializer, BlogSerializer,
     CommentSerializer, ReactionSerializer, NotificationSerializer, RegisterSerializer
 )
 
+
+from .utils import profile_completion
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def activity_logs(request):
+    """
+    Returns the activity logs for the authenticated user,
+    ordered by latest timestamp first.
+    """
+    logs = UserActivity.objects.filter(user=request.user).order_by('-timestamp')
+    data = [{"action": log.action, "time": log.timestamp} for log in logs]
+    return Response(data)
+
+@api_view(['GET'])
+def profile_status(request):
+    user = request.user
+    completion = profile_completion(user)
+    return Response({"profile_completion": completion})
 
 # ----------------------------
 # REAL-TIME NOTIFICATIONS UTILS

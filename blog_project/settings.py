@@ -34,18 +34,35 @@ INSTALLED_APPS = [
     'blog',                   # Our app
     'taggit',
     'channels',
+    'django_otp',
+    'django_otp.plugins.otp_email',
+    'django_otp.plugins.otp_static',
+    'two_factor',
+    'django.contrib.sites',  # Required for allauth
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.google',
+    'allauth.socialaccount.providers.facebook',
+    'allauth.socialaccount.providers.github',
 ]
+
+# Site id
+SITE_ID = 1
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'allauth.account.middleware.AccountMiddleware',  # <-- added for django-allauth
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',   # Cors middleware
+    'blog.middleware.UserActivityMiddleware',  # User activity logs
 ]
+
 
 ROOT_URLCONF = 'blog_project.urls'
 
@@ -110,6 +127,9 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# Auth User Models
+AUTH_USER_MODEL = 'blog.CustomUser'
+
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'
@@ -153,3 +173,16 @@ EMAIL_USE_TLS = config('EMAIL_USE_TLS', cast=bool)
 EMAIL_HOST_USER = config('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL')
+
+# Authentications Backend
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',  # default
+    'allauth.account.auth_backends.AuthenticationBackend',  # allauth
+]
+
+# allauth settings
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/'
+

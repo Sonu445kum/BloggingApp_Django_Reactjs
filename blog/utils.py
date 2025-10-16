@@ -17,3 +17,12 @@ def send_verification_email(user, request):
         [user.email],
         fail_silently=False
     )
+
+
+# Profiles Completions
+def profile_completion(user):
+    fields = ['first_name', 'last_name', 'email', 'bio', 'profile_picture', 'phone']
+    total_fields = len(fields)
+    filled_fields = sum(1 for field in fields if getattr(user, field))
+    completion_percentage = int(filled_fields / total_fields * 100)
+    return completion_percentage

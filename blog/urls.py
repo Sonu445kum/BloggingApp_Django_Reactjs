@@ -13,6 +13,13 @@ urlpatterns = [
     path('auth/change-password/', views.change_password, name='change_password'),
 
     # -------------------------
+    # Users Activity
+
+    # -------------------------
+    path('profile-status/', views.profile_status, name='profile-status'),
+    path('activity-logs/', views.activity_logs, name='activity-logs'),
+
+    # -------------------------
     # BLOGS
     # -------------------------
     path('blogs/', views.blog_list_view, name='blog_list'),
