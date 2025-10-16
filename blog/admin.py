@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.utils.html import format_html   # ✅ ADD THIS LINE
 from .models import (
     CustomUser,
     Profile,
@@ -7,7 +8,9 @@ from .models import (
     BlogMedia,
     Comment,
     Reaction,
-    Notification
+    Notification,
+    Bookmark,
+    UserActivity
 )
 
 # ----------------------------
@@ -20,21 +23,41 @@ admin.site.register(Comment)
 admin.site.register(Reaction)
 admin.site.register(Notification)
 admin.site.register(BlogMedia)
+admin.site.register(Bookmark)
+admin.site.register(UserActivity)
 
 # ----------------------------
 # BLOG ADMIN ENHANCEMENT
 # ----------------------------
-# Unregister default if already registered
-# admin.site.unregister(Blog)
+@admin.register(Blog)
+class BlogAdmin(admin.ModelAdmin):
+    list_display = (
+        'title', 'author', 'status', 'category',
+        'views', 'likes', 'comments_count',
+        'is_featured', 'publish_at', 'published_at',
+        'created_at', 'updated_at', 'featured_image_preview'
+    )
+    list_filter = (
+        'status', 'category', 'author',
+        'is_featured', 'created_at', 'tags'
+    )
+    search_fields = (
+        'title', 'content',
+        'author__username', 'category__name',
+        'tags__name'
+    )
+    ordering = ('-published_at',)
+    readonly_fields = (
+        'views', 'likes', 'comments_count',
+        'published_at', 'created_at', 'updated_at'
+    )
 
-# Register Blog with enhanced display
-admin.site.register(Blog, type('BlogAdmin', (admin.ModelAdmin,), {
-    'list_display': (
-        'title', 'author', 'status', 'category', 'views', 'likes', 'comments_count', 
-        'is_featured', 'publish_at', 'published_at', 'created_at', 'updated_at'
-    ),
-    'list_filter': ('status', 'category', 'author', 'is_featured', 'created_at'),
-    'search_fields': ('title', 'content', 'author__username', 'tags__name'),
-    'ordering': ('-published_at',),
-    'readonly_fields': ('views', 'likes', 'comments_count', 'published_at'),
-}))
+    # ✅ Thumbnail preview for featured image
+    def featured_image_preview(self, obj):
+        if obj.featured_image:
+            return format_html(
+                '<img src="{}" style="height:50px;width:80px;object-fit:cover;border-radius:4px;" />',
+                obj.featured_image.url
+            )
+        return "—"
+    featured_image_preview.short_description = 'Featured Image'

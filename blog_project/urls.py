@@ -1,5 +1,3 @@
-# blog_project/urls.py
-
 from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
@@ -13,7 +11,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 def root_view(request):
     """
     Handles the root URL '/'.
-    Returns a simple JSON message for testing the API.
+    Returns a simple JSON message to verify the API is running.
     """
     return JsonResponse({"message": "Welcome to the Blogging Platform API"})
 
@@ -22,22 +20,20 @@ def root_view(request):
 # -------------------------
 urlpatterns = [
     # Root URL
-    path('', root_view, name='root'),
+    path('', root_view, name='root'),  # API root endpoint
 
-    # Admin panel
+    # Django admin panel
     path('admin/', admin.site.urls),
 
-    # Social authentication (Django Allauth)
-    path('accounts/', include('allauth.urls')),  # Google, Facebook, GitHub login
+    # Social authentication (Google, Facebook, GitHub via Django Allauth)
+    path('accounts/', include('allauth.urls')),
 
-    # Blog app APIs
-    path('api/', include('blog.urls')),          # Your app URLs
+    # Blog app API endpoints
+    path('api/', include('blog.urls')),  # Include all URLs from the 'blog' app
 
     # JWT authentication endpoints
-    path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-
-    
+    path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),  # Get JWT token
+    path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),      # Refresh JWT token
 ]
 
 # -------------------------

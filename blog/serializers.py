@@ -1,130 +1,178 @@
 from rest_framework import serializers
 from .models import (
-    CustomUser,
-    Profile,
-    Category,
-    Blog,
-    BlogMedia,
-    Comment,
-    Reaction,
-    Notification
+    CustomUser, Profile, Category, Blog, BlogMedia, Comment,
+    Reaction, Bookmark, Notification, UserActivity
 )
-from taggit.serializers import (TagListSerializerField, TaggitSerializer)
+from taggit.serializers import TagListSerializerField, TaggitSerializer
 
-# ----------------------------
+# ====================================
 # REGISTER SERIALIZER
-# ----------------------------
+# ====================================
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
 
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'email', 'password', 'role']
+        fields = ['id', 'username', 'email', 'password']
 
     def create(self, validated_data):
-        user = CustomUser(
+        user = CustomUser.objects.create_user(
             username=validated_data['username'],
             email=validated_data['email'],
-            role=validated_data.get('role', 'author')
+            password=validated_data['password']
         )
-        user.set_password(validated_data['password'])
-        user.save()
         return user
 
-# ----------------------------
-# USER SERIALIZER
-# ----------------------------
-class UserSerializer(serializers.ModelSerializer):
+
+# ====================================
+# USER & PROFILE SERIALIZERS
+# ====================================
+class CustomUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'email', 'role', 'email_verified']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'email_verified']
 
-# ----------------------------
-# PROFILE SERIALIZER
-# ----------------------------
+
 class ProfileSerializer(serializers.ModelSerializer):
-    user = UserSerializer(read_only=True)
+    user = CustomUserSerializer(read_only=True)
+    followers_count = serializers.SerializerMethodField()
+    following_count = serializers.SerializerMethodField()
+    bookmarks_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Profile
-        fields = ['id', 'user', 'bio', 'profile_pic', 'social_links', 'following', 'bookmarks']
+        fields = [
+            'id', 'user', 'bio', 'profile_pic', 'social_links',
+            'followers_count', 'following_count', 'bookmarks_count',
+        ]
 
-# ----------------------------
+    def get_followers_count(self, obj):
+        return obj.followers.count()
+
+    def get_following_count(self, obj):
+        return obj.following.count()
+
+    def get_bookmarks_count(self, obj):
+        return obj.bookmarks.count()
+
+
+# ====================================
 # CATEGORY SERIALIZER
-# ----------------------------
+# ====================================
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = ['id', 'name', 'slug']
 
-# ----------------------------
+
+# ====================================
 # BLOG MEDIA SERIALIZER
-# ----------------------------
+# ====================================
 class BlogMediaSerializer(serializers.ModelSerializer):
     class Meta:
         model = BlogMedia
         fields = ['id', 'file', 'uploaded_at']
 
-# ----------------------------
-# BLOG SERIALIZER
-# ----------------------------
+
+# ====================================
+# COMMENT SERIALIZER (Nested Replies)
+# ====================================
+class RecursiveCommentSerializer(serializers.Serializer):
+    """Recursive serializer for nested comment replies."""
+    def to_representation(self, value):
+        serializer = CommentSerializer(value, context=self.context)
+        return serializer.data
+
+
+class CommentSerializer(serializers.ModelSerializer):
+    user = CustomUserSerializer(read_only=True)
+    replies = RecursiveCommentSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Comment
+        fields = ['id', 'user', 'content', 'parent', 'created_at', 'replies']
+
+
+# ====================================
+# REACTION SERIALIZER
+# ====================================
+class ReactionSerializer(serializers.ModelSerializer):
+    user = CustomUserSerializer(read_only=True)
+
+    class Meta:
+        model = Reaction
+        fields = ['id', 'user', 'reaction_type', 'created_at']
+
+
+# ====================================
+# BOOKMARK SERIALIZER
+# ====================================
+class BookmarkSerializer(serializers.ModelSerializer):
+    user = CustomUserSerializer(read_only=True)
+    blog_title = serializers.CharField(source='blog.title', read_only=True)
+
+    class Meta:
+        model = Bookmark
+        fields = ['id', 'user', 'blog', 'blog_title', 'created_at']
+
+
+# ====================================
+# BLOG SERIALIZER (Main)
+# ====================================
 class BlogSerializer(TaggitSerializer, serializers.ModelSerializer):
-    author = UserSerializer(read_only=True)
-    tags = TagListSerializerField()
+    author = CustomUserSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
+    tags = TagListSerializerField()
     media = BlogMediaSerializer(many=True, read_only=True)
-    comments_count = serializers.SerializerMethodField()
-    reactions_count = serializers.SerializerMethodField()
+    comments = CommentSerializer(many=True, read_only=True)
+    reactions = ReactionSerializer(many=True, read_only=True)
+    bookmarks = BookmarkSerializer(many=True, read_only=True)
+
+    total_reactions = serializers.SerializerMethodField()
+    total_comments = serializers.SerializerMethodField()
+    total_bookmarks = serializers.SerializerMethodField()
+    is_featured_display = serializers.SerializerMethodField()
 
     class Meta:
         model = Blog
         fields = [
-            'id', 'author', 'title', 'content', 'markdown_content', 'status', 'category',
-            'tags', 'featured_image', 'attachments', 'media', 'views', 'likes', 'comments_count',
-            'publish_at', 'published_at', 'created_at', 'updated_at', 'reactions_count', 'is_featured'
+            'id', 'author', 'title', 'content', 'markdown_content', 'category',
+            'tags', 'featured_image', 'attachments', 'status',
+            'views', 'likes', 'comments_count', 'is_featured', 'is_featured_display',
+            'publish_at', 'published_at', 'created_at', 'updated_at',
+            'media', 'comments', 'reactions', 'bookmarks',
+            'total_reactions', 'total_comments', 'total_bookmarks'
         ]
 
-    def get_comments_count(self, obj):
-        return obj.comments.count()
-
-    def get_reactions_count(self, obj):
+    def get_total_reactions(self, obj):
         return obj.reactions.count()
 
-# ----------------------------
-# TRENDING BLOG SERIALIZER
-# ----------------------------
-class TrendingBlogSerializer(BlogSerializer):
-    pass  # reuse fields from BlogSerializer
+    def get_total_comments(self, obj):
+        return obj.comments.count()
 
-# ----------------------------
-# COMMENT SERIALIZER
-# ----------------------------
-class CommentSerializer(serializers.ModelSerializer):
-    user = UserSerializer(read_only=True)
-    replies = serializers.SerializerMethodField()
+    def get_total_bookmarks(self, obj):
+        return obj.bookmarked_by.count() if hasattr(obj, 'bookmarked_by') else 0
 
-    class Meta:
-        model = Comment
-        fields = ['id', 'user', 'blog', 'parent', 'content', 'created_at', 'updated_at', 'replies']
+    def get_is_featured_display(self, obj):
+        return "⭐ Featured" if obj.is_featured else "Normal"
 
-    def get_replies(self, obj):
-        return CommentSerializer(obj.replies.all(), many=True).data
 
-# ----------------------------
-# REACTION SERIALIZER
-# ----------------------------
-class ReactionSerializer(serializers.ModelSerializer):
-    user = UserSerializer(read_only=True)
+# ====================================
+# USER ACTIVITY SERIALIZER
+# ====================================
+class UserActivitySerializer(serializers.ModelSerializer):
+    user = CustomUserSerializer(read_only=True)
 
     class Meta:
-        model = Reaction
-        fields = ['id', 'user', 'blog', 'type', 'created_at']
+        model = UserActivity
+        fields = ['id', 'user', 'action', 'timestamp']
 
-# ----------------------------
+
+# ====================================
 # NOTIFICATION SERIALIZER
-# ----------------------------
+# ====================================
 class NotificationSerializer(serializers.ModelSerializer):
-    user = UserSerializer(read_only=True)
+    user = CustomUserSerializer(read_only=True)
 
     class Meta:
         model = Notification

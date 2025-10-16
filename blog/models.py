@@ -5,11 +5,12 @@ from django.utils import timezone
 from django_ckeditor_5.fields import CKEditor5Field
 from markdownx.models import MarkdownxField
 
-# ----------------------------
+# ====================================
 # USER & PROFILE
-# ----------------------------
+# ====================================
 class CustomUser(AbstractUser):
     email_verified = models.BooleanField(default=False)
+
     ROLE_CHOICES = (
         ('author', 'Author'),
         ('editor', 'Editor'),
@@ -26,6 +27,9 @@ class UserActivity(models.Model):
     action = models.CharField(max_length=255)
     timestamp = models.DateTimeField(auto_now_add=True)
 
+    def __str__(self):
+        return f"{self.user.username} - {self.action}"
+
 
 class Profile(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
@@ -33,15 +37,15 @@ class Profile(models.Model):
     profile_pic = models.ImageField(upload_to='profiles/', blank=True)
     social_links = models.JSONField(default=dict, blank=True)
     following = models.ManyToManyField('self', symmetrical=False, related_name='followers', blank=True)
-    bookmarks = models.ManyToManyField('Blog', related_name='bookmarked_by', blank=True)
+    bookmarks = models.ManyToManyField('Blog', related_name='bookmarked_users', blank=True)
 
     def __str__(self):
-        return f"{self.user.username}'s profile"
+        return f"{self.user.username}'s Profile"
 
 
-# ----------------------------
+# ====================================
 # CATEGORY & BLOG
-# ----------------------------
+# ====================================
 class Category(models.Model):
     name = models.CharField(max_length=50, unique=True)
     slug = models.SlugField(unique=True, blank=True, null=True)
@@ -53,7 +57,7 @@ class Category(models.Model):
 class Blog(models.Model):
     STATUS_CHOICES = (
         ('draft', 'Draft'),
-        ('published', 'Published')
+        ('published', 'Published'),
     )
 
     author = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='blogs')
@@ -62,14 +66,12 @@ class Blog(models.Model):
     markdown_content = MarkdownxField(blank=True, null=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='blogs')
-    tags = TaggableManager()
+    tags = TaggableManager(blank=True)
     featured_image = models.ImageField(upload_to='blogs/', blank=True, null=True)
     attachments = models.FileField(upload_to='blog_files/', blank=True, null=True)
 
-    # ----------------------------
-    # Search & Analytics Fields
-    # ----------------------------
-    search_text = models.TextField(blank=True, null=True)  # For full-text search
+    # Analytics / Metadata
+    search_text = models.TextField(blank=True, null=True)
     views = models.PositiveIntegerField(default=0)
     likes = models.PositiveIntegerField(default=0)
     comments_count = models.PositiveIntegerField(default=0)
@@ -80,30 +82,29 @@ class Blog(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ['-created_at']
+
     def __str__(self):
         return self.title
 
     def publish(self):
-        """Publish immediately"""
+        """Publish the blog."""
         self.status = 'published'
         self.published_at = timezone.now()
         self.save()
 
     def is_scheduled(self):
-        """Check if blog is scheduled for future"""
+        """Return True if the blog is scheduled for future publishing."""
         return self.publish_at and self.publish_at > timezone.now()
 
     def save(self, *args, **kwargs):
-        """
-        1. Auto-publish if publish_at is in the past
-        2. Update denormalized search_text field for MySQL full-text search
-        """
-        # Auto-publish logic
+        """Auto-update publish status and search text."""
         if self.publish_at and self.publish_at <= timezone.now():
             self.status = 'published'
             self.published_at = timezone.now()
 
-        # Full-text search logic
+        # Update searchable text
         tag_names = ', '.join(self.tags.names()) if self.pk else ''
         parts = [
             self.title or '',
@@ -113,55 +114,85 @@ class Blog(models.Model):
             str(self.author.username if self.author else '')
         ]
         self.search_text = ' '.join(parts)
-
         super().save(*args, **kwargs)
 
 
-# ----------------------------
+# ====================================
 # BLOG MEDIA
-# ----------------------------
+# ====================================
 class BlogMedia(models.Model):
     blog = models.ForeignKey(Blog, on_delete=models.CASCADE, related_name='media')
     file = models.FileField(upload_to='blog_media/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+    def __str__(self):
+        return f"Media for {self.blog.title}"
 
-# ----------------------------
-# COMMENTS
-# ----------------------------
+
+# ====================================
+# COMMENTS (Threaded)
+# ====================================
 class Comment(models.Model):
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     blog = models.ForeignKey(Blog, on_delete=models.CASCADE, related_name='comments')
-    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE, related_name='replies')
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     content = models.TextField()
+    parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies')
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
 
     def __str__(self):
-        return f"Comment by {self.user.username} on {self.blog.title}"
+        return f"{self.user.username} commented on {self.blog.title}"
+
+    @property
+    def is_reply(self):
+        return self.parent is not None
 
 
-# ----------------------------
-# REACTIONS
-# ----------------------------
+# ====================================
+# REACTIONS (Rich Emojis)
+# ====================================
 class Reaction(models.Model):
-    REACTIONS = (
-        ('like', 'Like'),
-        ('love', 'Love'),
-        ('wow', 'Wow')
-    )
+    REACTION_CHOICES = [
+        ('like', '👍 Like'),
+        ('dislike', '👎 Dislike'),
+        ('love', '❤️ Love'),
+        ('laugh', '😂 Laugh'),
+        ('angry', '😡 Angry'),
+        ('wow', '😲 Wow'),
+    ]
+
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     blog = models.ForeignKey(Blog, on_delete=models.CASCADE, related_name='reactions')
-    type = models.CharField(max_length=10, choices=REACTIONS)
+    reaction_type = models.CharField(max_length=10, choices=REACTION_CHOICES)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        unique_together = ('user', 'blog')  # Each user can react once per blog
+
     def __str__(self):
-        return f"{self.user.username} reacted {self.type} on {self.blog.title}"
+        return f"{self.user.username} reacted {self.reaction_type} on {self.blog.title}"
 
 
-# ----------------------------
+# ====================================
+# BOOKMARKS
+# ====================================
+class Bookmark(models.Model):
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='bookmarks')
+    blog = models.ForeignKey(Blog, on_delete=models.CASCADE, related_name='bookmarked_by')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'blog')
+
+    def __str__(self):
+        return f"{self.user.username} bookmarked {self.blog.title}"
+
+
+# ====================================
 # NOTIFICATIONS
-# ----------------------------
+# ====================================
 class Notification(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='notifications')
     message = models.TextField()
