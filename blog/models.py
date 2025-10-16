@@ -194,10 +194,19 @@ class Bookmark(models.Model):
 # NOTIFICATIONS
 # ====================================
 class Notification(models.Model):
+    NOTIFICATION_TYPE_CHOICES = [
+        ('comment', 'Comment'),
+        ('reaction', 'Reaction'),
+        ('announcement', 'Announcement'),
+    ]
+
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='notifications')
+    sender = models.ForeignKey(CustomUser, null=True, blank=True, on_delete=models.SET_NULL, related_name='sent_notifications')
+    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPE_CHOICES)
+    blog = models.ForeignKey(Blog, null=True, blank=True, on_delete=models.CASCADE)
     message = models.TextField()
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Notification for {self.user.username}"
+        return f"{self.notification_type} -> {self.user.username}"

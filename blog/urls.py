@@ -95,7 +95,7 @@ urlpatterns = [
     # -------------------------
     # NOTIFICATIONS
     # -------------------------
-    path('notifications/', views.notification_list_view, name='notification_list'),  
+     path('notifications/', views.user_notifications, name='user_notifications'),  
     # List all notifications for the logged-in user
 
     path('notifications/<int:pk>/mark-read/', views.notification_mark_read_view, name='notification_mark_read'),  
