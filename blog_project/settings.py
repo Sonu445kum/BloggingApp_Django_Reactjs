@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'rest_framework',         # DRF
     'corsheaders',            # CORS
     'blog',                   # Our app
+    'taggit',
 ]
 
 MIDDLEWARE = [

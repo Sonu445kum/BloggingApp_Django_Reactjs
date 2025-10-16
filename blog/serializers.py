@@ -1,58 +1,123 @@
 from rest_framework import serializers
-from .models import CustomUser, Blog, Category, Comment,Like
-from django.contrib.auth.password_validation import validate_password
+from .models import (
+    CustomUser,
+    Profile,
+    Category,
+    Blog,
+    Comment,
+    Reaction,
+    Notification
+)
+from taggit.serializers import (TagListSerializerField, TaggitSerializer)
 
-# User Registration Serializer
+# ----------------------------
+# REGISTER SERIALIZER
+# ----------------------------
 class RegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
-    password2 = serializers.CharField(write_only=True, required=True)
+    password = serializers.CharField(write_only=True)
 
     class Meta:
         model = CustomUser
-        fields = ('username', 'email', 'password', 'password2', 'profile_picture')
-
-    def validate(self, attrs):
-        if attrs['password'] != attrs['password2']:
-            raise serializers.ValidationError({"password": "Password fields didn't match."})
-        return attrs
+        fields = ['id', 'username', 'email', 'password', 'role']
 
     def create(self, validated_data):
-        validated_data.pop('password2')
-        user = CustomUser.objects.create_user(**validated_data)
+        user = CustomUser(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            role=validated_data.get('role', 'user')  # default role user
+        )
+        user.set_password(validated_data['password'])  # hash password
+        user.save()
         return user
 
-# User Serializer
+
+# ----------------------------
+# USER SERIALIZER
+# ----------------------------
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'email', 'profile_picture', 'is_admin']
+        fields = ['id', 'username', 'email', 'role', 'email_verified']
 
-# Category Serializer
+
+# ----------------------------
+# PROFILE SERIALIZER
+# ----------------------------
+class ProfileSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+
+    class Meta:
+        model = Profile
+        fields = ['id', 'user', 'bio', 'profile_pic', 'social_links', 'following', 'bookmarks']
+
+
+# ----------------------------
+# CATEGORY SERIALIZER
+# ----------------------------
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = '__all__'
+        fields = ['id', 'name', 'slug']
 
-# Blog Serializer
-class BlogSerializer(serializers.ModelSerializer):
+
+# ----------------------------
+# BLOG SERIALIZER
+# ----------------------------
+class BlogSerializer(TaggitSerializer, serializers.ModelSerializer):
     author = UserSerializer(read_only=True)
+    tags = TagListSerializerField()  # for taggit integration
     category = CategorySerializer(read_only=True)
-    category_id = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), source='category', write_only=True)
+    comments_count = serializers.SerializerMethodField()
+    reactions_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Blog
-        fields = '__all__'
+        fields = [
+            'id', 'author', 'title', 'content', 'status', 'category',
+            'tags', 'featured_image', 'attachments', 'views',
+            'publish_at', 'created_at', 'updated_at',
+            'comments_count', 'reactions_count'
+        ]
 
-# Comment Serializer
+    def get_comments_count(self, obj):
+        return obj.comments.count()
+
+    def get_reactions_count(self, obj):
+        return obj.reactions.count()
+
+
+# ----------------------------
+# COMMENT SERIALIZER
+# ----------------------------
 class CommentSerializer(serializers.ModelSerializer):
-    author = UserSerializer(read_only=True)
+    user = UserSerializer(read_only=True)
+    replies = serializers.SerializerMethodField()
 
     class Meta:
         model = Comment
-        fields = '__all__'
+        fields = ['id', 'user', 'blog', 'parent', 'content', 'created_at', 'updated_at', 'replies']
 
-# Like Serializer
-class LikeSerializer(serializers.ModelSerializer):
+    def get_replies(self, obj):
+        return CommentSerializer(obj.replies.all(), many=True).data
+
+
+# ----------------------------
+# REACTION SERIALIZER
+# ----------------------------
+class ReactionSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+
     class Meta:
-        model = Like
-        fields = ['id', 'user', 'blog', 'created_at']
+        model = Reaction
+        fields = ['id', 'user', 'blog', 'type', 'created_at']
+
+
+# ----------------------------
+# NOTIFICATION SERIALIZER
+# ----------------------------
+class NotificationSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+
+    class Meta:
+        model = Notification
+        fields = ['id', 'user', 'message', 'is_read', 'created_at']

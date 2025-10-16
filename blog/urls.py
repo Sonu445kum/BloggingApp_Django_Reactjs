@@ -3,13 +3,13 @@ from . import views
 
 urlpatterns = [
     # -------------------------
-    # Auth
+    # AUTH
     # -------------------------
     path('auth/register/', views.register_view, name='register'),
     path('auth/me/', views.current_user_view, name='current_user'),
 
     # -------------------------
-    # Blogs
+    # BLOGS
     # -------------------------
     path('blogs/', views.blog_list_view, name='blog_list'),
     path('blogs/<int:pk>/', views.blog_detail_view, name='blog_detail'),
@@ -17,26 +17,33 @@ urlpatterns = [
     path('blogs/<int:pk>/edit/', views.blog_update_delete_view, name='blog_update_delete'),
 
     # -------------------------
-    # Categories
+    # CATEGORIES
     # -------------------------
     path('categories/', views.category_list_view, name='category_list'),
     path('categories/create/', views.category_create_view, name='category_create'),
     path('categories/<int:pk>/edit/', views.category_update_delete_view, name='category_update_delete'),
 
     # -------------------------
-    # Comments
+    # COMMENTS
     # -------------------------
     path('blogs/<int:blog_id>/comments/', views.comment_list_view, name='comment_list'),
     path('blogs/<int:blog_id>/comments/create/', views.comment_create_view, name='comment_create'),
     path('comments/<int:pk>/delete/', views.comment_delete_view, name='comment_delete'),
 
-
-    # Likes
-    path('likes/', views.like_list_create, name='like-list-create'),
-    path('likes/<int:pk>/', views.like_detail, name='like-detail'),
+    # -------------------------
+    # REACTIONS
+    # -------------------------
+    path('blogs/<int:blog_id>/reaction/', views.reaction_toggle_view, name='reaction_toggle'),
+    path('blogs/<int:blog_id>/reactions/', views.reaction_list_view, name='reaction_list'),
 
     # -------------------------
-    # Admin Stats
+    # NOTIFICATIONS
+    # -------------------------
+    path('notifications/', views.notification_list_view, name='notification_list'),
+    path('notifications/<int:pk>/mark-read/', views.notification_mark_read_view, name='notification_mark_read'),
+
+    # -------------------------
+    # ADMIN STATS
     # -------------------------
     path('stats/', views.stats_view, name='stats'),
 ]
