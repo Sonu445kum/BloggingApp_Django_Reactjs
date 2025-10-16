@@ -29,6 +29,10 @@ urlpatterns = [
     path('blogs/<int:pk>/edit/', views.blog_update_view, name='blog_update'),
     path('blogs/media/upload/', views.blog_media_upload_view, name='blog_media_upload'),
 
+    # **Search & Tag Suggestions**
+    path('blogs/search/', views.search_blogs, name='search_blogs'),
+    path('tags/suggest/', views.tag_suggestions, name='tag_suggestions'),
+
     # -------------------------
     # CATEGORIES
     # -------------------------

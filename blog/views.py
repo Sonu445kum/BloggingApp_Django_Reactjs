@@ -9,6 +9,8 @@ from django.conf import settings
 from django.urls import reverse
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.contrib.sites.shortcuts import get_current_site
+from django.db import models
+from django.db.models.expressions import RawSQL
 
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from asgiref.sync import async_to_sync
@@ -24,6 +26,17 @@ from .serializers import (
     RegisterSerializer
 )
 from .utils import profile_completion
+
+from taggit.models import Tag  # <-- yaha import change hua
+
+@api_view(['GET'])
+def tag_suggestions(request):
+    q = request.query_params.get('q', '').strip()
+    if not q:
+        return Response([])
+    # Case-insensitive startswith search
+    tags = Tag.objects.filter(name__istartswith=q).values_list('name', flat=True)[:10]
+    return Response(list(tags))
 
 # ----------------------------
 # USER ACTIVITY LOGS
@@ -270,6 +283,63 @@ def blog_media_upload_view(request):
         serializer.save(blog=blog)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ----------------------------
+# BLOG SEARCH
+# ----------------------------
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def search_blogs(request):
+    """
+    Full-text search using MySQL MATCH ... AGAINST
+    Supports filtering and sorting
+    """
+    query = request.query_params.get('q', '').strip()
+    author = request.query_params.get('author')
+    category = request.query_params.get('category')
+    tag = request.query_params.get('tag')
+    sort = request.query_params.get('sort', '-rank')  # default sort by relevance
+
+    if not query:
+        return Response({'count': 0, 'results': []})
+
+    # MySQL Fulltext search
+    sql = "MATCH(search_text) AGAINST(%s IN NATURAL LANGUAGE MODE)"
+    blogs = Blog.objects.annotate(rank=RawSQL(sql, (query,))).filter(rank__gt=0)
+
+    # Apply filters
+    if author:
+        blogs = blogs.filter(author__username__iexact=author)
+    if category:
+        blogs = blogs.filter(category__name__iexact=category)
+    if tag:
+        blogs = blogs.filter(tags__name__iexact=tag)
+
+    # Apply sorting
+    if sort == 'date':
+        blogs = blogs.order_by('-published_at')
+    elif sort == 'views':
+        blogs = blogs.order_by('-views_count')
+    elif sort == 'likes':
+        blogs = blogs.order_by('-likes_count')
+    else:
+        blogs = blogs.order_by('-rank')
+
+    # Prepare response
+    results = []
+    for b in blogs[:50]:
+        results.append({
+            'id': b.id,
+            'title': b.title,
+            'excerpt': b.content[:200],
+            'author': b.author.username,
+            'category': b.category.name if b.category else '',
+            'tags': [t.name for t in b.tags.all()],
+            'rank': b.rank,
+        })
+
+    return Response({'count': len(results), 'results': results})
 
 
 # ----------------------------

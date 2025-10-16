@@ -38,13 +38,13 @@ class Profile(models.Model):
     def __str__(self):
         return f"{self.user.username}'s profile"
 
+
 # ----------------------------
 # CATEGORY & BLOG
 # ----------------------------
 class Category(models.Model):
     name = models.CharField(max_length=50, unique=True)
     slug = models.SlugField(unique=True, blank=True, null=True)
-
 
     def __str__(self):
         return self.name
@@ -59,21 +59,24 @@ class Blog(models.Model):
     author = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='blogs')
     title = models.CharField(max_length=255)
     content = CKEditor5Field('Content', config_name='default')
-    markdown_content = MarkdownxField(blank=True, null=True)  # Markdown support
+    markdown_content = MarkdownxField(blank=True, null=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='blogs')
     tags = TaggableManager()
     featured_image = models.ImageField(upload_to='blogs/', blank=True, null=True)
     attachments = models.FileField(upload_to='blog_files/', blank=True, null=True)
 
+    # ----------------------------
+    # Search & Analytics Fields
+    # ----------------------------
+    search_text = models.TextField(blank=True, null=True)  # For full-text search
     views = models.PositiveIntegerField(default=0)
     likes = models.PositiveIntegerField(default=0)
     comments_count = models.PositiveIntegerField(default=0)
     is_featured = models.BooleanField(default=False)
 
-    publish_at = models.DateTimeField(null=True, blank=True)  # Scheduled publishing
+    publish_at = models.DateTimeField(null=True, blank=True)
     published_at = models.DateTimeField(null=True, blank=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -91,10 +94,26 @@ class Blog(models.Model):
         return self.publish_at and self.publish_at > timezone.now()
 
     def save(self, *args, **kwargs):
-        """Auto-publish if publish_at is in the past"""
+        """
+        1. Auto-publish if publish_at is in the past
+        2. Update denormalized search_text field for MySQL full-text search
+        """
+        # Auto-publish logic
         if self.publish_at and self.publish_at <= timezone.now():
             self.status = 'published'
             self.published_at = timezone.now()
+
+        # Full-text search logic
+        tag_names = ', '.join(self.tags.names()) if self.pk else ''
+        parts = [
+            self.title or '',
+            str(self.content) or '',
+            str(self.category.name if self.category else ''),
+            tag_names,
+            str(self.author.username if self.author else '')
+        ]
+        self.search_text = ' '.join(parts)
+
         super().save(*args, **kwargs)
 
 
@@ -105,6 +124,7 @@ class BlogMedia(models.Model):
     blog = models.ForeignKey(Blog, on_delete=models.CASCADE, related_name='media')
     file = models.FileField(upload_to='blog_media/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
+
 
 # ----------------------------
 # COMMENTS
