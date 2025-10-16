@@ -9,14 +9,14 @@ from markdownx.models import MarkdownxField
 # USER & PROFILE
 # ====================================
 class CustomUser(AbstractUser):
-    email_verified = models.BooleanField(default=False)
-
-    ROLE_CHOICES = (
-        ('author', 'Author'),
-        ('editor', 'Editor'),
+    ROLE_CHOICES = [
         ('admin', 'Admin'),
-    )
-    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='author')
+        ('editor', 'Editor'),
+        ('author', 'Author'),
+        ('reader', 'Reader'),
+    ]
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='reader')
+    email_verified = models.BooleanField(default=False)  # Added field for serializer
 
     def __str__(self):
         return self.username
@@ -77,6 +77,10 @@ class Blog(models.Model):
     comments_count = models.PositiveIntegerField(default=0)
     is_featured = models.BooleanField(default=False)
 
+    # Moderation
+    is_approved = models.BooleanField(default=False)
+    is_flagged = models.BooleanField(default=False)
+
     publish_at = models.DateTimeField(null=True, blank=True)
     published_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -89,23 +93,23 @@ class Blog(models.Model):
         return self.title
 
     def publish(self):
-        """Publish the blog."""
         self.status = 'published'
         self.published_at = timezone.now()
         self.save()
 
     def is_scheduled(self):
-        """Return True if the blog is scheduled for future publishing."""
         return self.publish_at and self.publish_at > timezone.now()
 
     def save(self, *args, **kwargs):
-        """Auto-update publish status and search text."""
         if self.publish_at and self.publish_at <= timezone.now():
             self.status = 'published'
             self.published_at = timezone.now()
 
-        # Update searchable text
-        tag_names = ', '.join(self.tags.names()) if self.pk else ''
+        # Update searchable text safely
+        try:
+            tag_names = ', '.join(self.tags.names()) if self.pk else ''
+        except:
+            tag_names = ''
         parts = [
             self.title or '',
             str(self.content) or '',
@@ -137,6 +141,11 @@ class Comment(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     content = models.TextField()
     parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies')
+
+    # Moderation
+    is_approved = models.BooleanField(default=True)
+    is_flagged = models.BooleanField(default=False)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -169,7 +178,7 @@ class Reaction(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ('user', 'blog')  # Each user can react once per blog
+        unique_together = ('user', 'blog')
 
     def __str__(self):
         return f"{self.user.username} reacted {self.reaction_type} on {self.blog.title}"

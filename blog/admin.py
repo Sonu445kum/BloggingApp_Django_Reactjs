@@ -1,5 +1,5 @@
 from django.contrib import admin
-from django.utils.html import format_html   # ✅ ADD THIS LINE
+from django.utils.html import format_html
 from .models import (
     CustomUser,
     Profile,
@@ -25,6 +25,7 @@ admin.site.register(Notification)
 admin.site.register(BlogMedia)
 admin.site.register(Bookmark)
 admin.site.register(UserActivity)
+
 
 # ----------------------------
 # BLOG ADMIN ENHANCEMENT
