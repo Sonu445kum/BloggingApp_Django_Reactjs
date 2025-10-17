@@ -193,4 +193,10 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, message=".*CKEditor 4.*")
 warnings.filterwarnings("ignore", category=UserWarning, message=".*MySQL does not support unique constraints with conditions.*")
 
+# Example for local development (React + Vite)
+FRONTEND_URL = "http://localhost:5173"
+
+# For production, you can change it to your domain
+# FRONTEND_URL = "https://yourdomain.com"
+
 

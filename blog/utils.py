@@ -19,10 +19,21 @@ def send_verification_email(user, request):
     )
 
 
-# Profiles Completions
+# utils.py
+
 def profile_completion(user):
-    fields = ['first_name', 'last_name', 'email', 'bio', 'profile_picture', 'phone']
-    total_fields = len(fields)
-    filled_fields = sum(1 for field in fields if getattr(user, field))
-    completion_percentage = int(filled_fields / total_fields * 100)
-    return completion_percentage
+    """
+    Calculate profile completion percentage for a user.
+    Only counts fields that actually exist in the user model.
+    """
+    fields = ['first_name', 'last_name', 'email', 'bio', 'profile_picture', 'phone_number']
+
+    existing_fields = [f for f in fields if hasattr(user, f)]
+    if not existing_fields:
+        return 0
+
+    filled_fields = sum(
+        1 for field in existing_fields
+        if getattr(user, field)
+    )
+    return int((filled_fields / len(existing_fields)) * 100)

@@ -14,10 +14,15 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
+
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.contrib.auth.tokens import default_token_generator, PasswordResetTokenGenerator
+
 # -------------------------
 # JWT & auth tokens
 # -------------------------
-from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
+from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
 
 # -------------------------
 # Channels / WebSockets
@@ -36,6 +41,8 @@ from webpush import send_user_notification
 # -------------------------
 from .permissions import IsAdmin, IsEditor
 
+
+
 # -------------------------
 # Models & Serializers
 # -------------------------
@@ -46,60 +53,83 @@ from .models import (
 from .serializers import (
     CustomUserSerializer, ProfileSerializer, CategorySerializer, BlogSerializer,
     BlogMediaSerializer, CommentSerializer, ReactionSerializer,
-    NotificationSerializer, RegisterSerializer
+    NotificationSerializer, RegisterSerializer, LoginSerializer
 )
 from .utils import profile_completion
 
-# Alias for backward compatibility
-UserSerializer = CustomUserSerializer
+from taggit.models import Tag
+from rest_framework.permissions import IsAdminUser
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])  # User ko login hona chahiye
+def flag_blog(request, blog_id):
+    """
+    User ke liye blog ko inappropriate mark karne ka endpoint
+    URL: /blogs/<int:blog_id>/flag/
+    Method: POST
+    """
+    try:
+        blog = Blog.objects.get(id=blog_id)
+    except Blog.DoesNotExist:
+        return Response({'error': 'Blog not found'}, status=status.HTTP_404_NOT_FOUND)
 
-# -----------------------------
-# TOP BLOGS API
-# -----------------------------
+    # Agar already flagged hai
+    if request.user in blog.flagged_by.all():
+        return Response({'message': 'You have already flagged this blog'}, status=status.HTTP_200_OK)
+
+    # Flagging logic (assuming Blog model me ManyToMany field 'flagged_by' hai)
+    blog.flagged_by.add(request.user)
+    blog.save()
+
+    return Response({'message': 'Blog flagged successfully'}, status=status.HTTP_200_OK)
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])  # Sirf admin approve kar sakta hai
+def approve_blog(request, blog_id):
+    """
+    Admin ke liye blog approve karne ka endpoint
+    URL: /blogs/<int:blog_id>/approve/
+    Method: POST
+    """
+    try:
+        blog = Blog.objects.get(id=blog_id)
+    except Blog.DoesNotExist:
+        return Response({'error': 'Blog not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if blog.is_approved:  # Agar already approved hai
+        return Response({'message': 'Blog is already approved'}, status=status.HTTP_200_OK)
+
+    blog.is_approved = True
+    blog.approved_by = request.user  # Agar model me approved_by field hai
+    blog.approved_at = timezone.now()  # Agar model me approved_at field hai
+    blog.save()
+
+    return Response({'message': 'Blog approved successfully'}, status=status.HTTP_200_OK)
+
 @api_view(['GET'])
+@permission_classes([AllowAny])
 def top_blogs_api(request):
     """
-    Returns top 5 blogs based on number of reactions.
+    API to fetch top 5 blogs based on number of reactions
     """
-    # Annotate each blog with reactions count
     top_blogs = Blog.objects.annotate(
-        reactions_count=Count('reactions')
+        reactions_count=Count('reaction')
     ).order_by('-reactions_count')[:5]
 
-    # Serialize data
-    serializer = BlogSerializer(top_blogs, many=True)
-    return Response(serializer.data)
-# -----------------------------
-# UTILITY FUNCTIONS
-# -----------------------------
-def send_notification_to_user(user_id, message):
-    """Send real-time notification using Django Channels"""
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(
-        f"user_{user_id}",
-        {"type": "send_notification", "message": {"message": message}}
-    )
+    # Serialize data manually (or use a serializer if you have one)
+    data = []
+    for blog in top_blogs:
+        data.append({
+            'id': blog.id,
+            'title': blog.title,
+            'author': blog.author.username,
+            'reactions_count': blog.reactions_count,
+            'created_at': blog.created_at,
+        })
 
-def send_verification_email(user, request):
-    """Send email verification link to new user"""
-    token = RefreshToken.for_user(user).access_token
-    current_site = get_current_site(request).domain
-    relative_link = reverse('verify-email')
-    absurl = f"http://{current_site}{relative_link}?token={str(token)}"
-    email_body = f"Hi {user.username},\n\nUse the link below to verify your email:\n{absurl}"
-    send_mail(
-        'Verify your email',
-        email_body,
-        settings.DEFAULT_FROM_EMAIL,
-        [user.email],
-        fail_silently=False
-    )
+    return Response(data)
 
-# -----------------------------
-# TAG SUGGESTIONS
-# -----------------------------
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def tag_suggestions(request):
@@ -109,28 +139,80 @@ def tag_suggestions(request):
     tags = Tag.objects.filter(name__istartswith=q).values_list('name', flat=True)[:10]
     return Response(list(tags))
 
-# -----------------------------
-# USER ACTIVITY LOGS
-# -----------------------------
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def activity_logs(request):
-    logs = UserActivity.objects.filter(user=request.user).order_by('-timestamp')
-    data = [{"action": log.action, "time": log.timestamp} for log in logs]
-    return Response(data)
 
-# -----------------------------
-# PROFILE COMPLETION
-# -----------------------------
+# ----------------------------
+# 🔹 PROFILE STATUS VIEW
+# ----------------------------
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def profile_status(request):
     user = request.user
     completion = profile_completion(user)
-    return Response({"profile_completion": completion})
+
+    data = {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "role": getattr(user, 'role', 'reader'),
+        "email_verified": getattr(user, 'email_verified', False),
+        "profile_completion": completion
+    }
+    return Response(data, status=status.HTTP_200_OK)
+
+
+# ----------------------------
+# 🔹 ACTIVITY LOGS VIEW
+# ----------------------------
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def activity_logs(request):
+    """
+    Return a list of recent user activities for the logged-in user.
+    """
+    user = request.user
+    logs = UserActivity.objects.filter(user=user).order_by('-timestamp')[:20]
+
+    log_data = [
+        {
+            "activity_type": log.activity_type,
+            "description": log.description,
+            "timestamp": log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        for log in logs
+    ]
+
+    return Response({
+        "user": user.username,
+        "total_logs": len(log_data),
+        "recent_activities": log_data
+    }, status=status.HTTP_200_OK)
+
 
 # -----------------------------
-# AUTHENTICATION
+# USER DATA CLEAN HELPER
+# -----------------------------
+def clean_user_data(user):
+    """Return user dict without first_name/last_name"""
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "role": user.role,
+        "email_verified": user.email_verified
+    }
+
+# -----------------------------
+# JWT TOKENS HELPER
+# -----------------------------
+def get_tokens_for_user(user):
+    refresh = RefreshToken.for_user(user)
+    return {
+        'refresh': str(refresh),
+        'access': str(refresh.access_token),
+    }
+
+# -----------------------------
+# REGISTER VIEW
 # -----------------------------
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -138,32 +220,91 @@ def register_view(request):
     serializer = RegisterSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
-        send_verification_email(user, request)
-        return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+        tokens = get_tokens_for_user(user)
+
+        # Generate email verification UID and token
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        verification_link = f"{settings.FRONTEND_URL}/verify-email/?uid={uid}&token={token}"
+
+        # Send verification email
+        send_mail(
+            'Verify Your Email',
+            f'Hi {user.username}, click the link to verify your email: {verification_link}',
+            settings.DEFAULT_FROM_EMAIL,
+            [user.email],
+            fail_silently=False
+        )
+
+        return Response({
+            "message": "User registered successfully! Check your email for verification link.",
+            "user": clean_user_data(user),
+            "tokens": tokens
+        }, status=status.HTTP_201_CREATED)
+
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+# -----------------------------
+# LOGIN VIEW
+# -----------------------------
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def login_view(request):
+    serializer = LoginSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.validated_data['user']
+        tokens = get_tokens_for_user(user)
+        return Response({
+            "message": "Login successful",
+            "user": clean_user_data(user),
+            "tokens": tokens
+        }, status=status.HTTP_200_OK)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+# -----------------------------
+# CURRENT USER VIEW
+# -----------------------------
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def current_user_view(request):
-    serializer = UserSerializer(request.user)
-    return Response(serializer.data)
+    return Response(clean_user_data(request.user))
 
+# -----------------------------
+# VERIFY EMAIL VIEW
+# -----------------------------
+from django.utils.http import urlsafe_base64_decode
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def verify_email(request):
+    uidb64 = request.GET.get('uid')
     token = request.GET.get('token')
+
+    if not uidb64 or not token:
+        return Response({'error': 'Missing uid or token'}, status=status.HTTP_400_BAD_REQUEST)
+
     try:
-        payload = AccessToken(token)
-        user = CustomUser.objects.get(id=payload['user_id'])
-        if not user.email_verified:
-            user.email_verified = True
-            user.save()
+        # Decode the UID
+        uid = urlsafe_base64_decode(uidb64).decode()
+        user = CustomUser.objects.get(pk=uid)
+    except (TypeError, ValueError, OverflowError, CustomUser.DoesNotExist):
+        return Response({'error': 'Invalid UID'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Check token validity
+    if default_token_generator.check_token(user, token):
+        if user.email_verified:
+            return Response({'message': 'Email already verified'}, status=status.HTTP_200_OK)
+        
+        # Mark email as verified
+        user.email_verified = True
+        user.save()
         return Response({'message': 'Email successfully verified'}, status=status.HTTP_200_OK)
-    except Exception:
-        return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
 
 # -----------------------------
-# PASSWORD RESET / CHANGE
+# REQUEST PASSWORD RESET
 # -----------------------------
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -171,57 +312,80 @@ def request_password_reset(request):
     email = request.data.get('email')
     if not email:
         return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
+
     try:
         user = CustomUser.objects.get(email=email)
     except CustomUser.DoesNotExist:
         return Response({'error': 'No user found with this email'}, status=status.HTTP_404_NOT_FOUND)
 
+    # Generate UID and token
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = PasswordResetTokenGenerator().make_token(user)
-    reset_url = f"{settings.FRONTEND_URL}/reset-password/?uid={user.id}&token={token}"
+    reset_url = f"{settings.FRONTEND_URL}/reset-password/?uid={uid}&token={token}"
 
+    # Send reset email
     send_mail(
         'Password Reset Request',
-        f'Click the link to reset your password: {reset_url}',
+        f'Hi {user.username}, click the link to reset your password: {reset_url}',
         settings.DEFAULT_FROM_EMAIL,
         [email],
         fail_silently=False,
     )
     return Response({'message': 'Password reset link sent to email'}, status=status.HTTP_200_OK)
 
+
+# -----------------------------
+# RESET PASSWORD
+# -----------------------------
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def reset_password(request):
-    uid = request.data.get('uid')
+    uidb64 = request.data.get('uid')
     token = request.data.get('token')
     new_password = request.data.get('new_password')
-    if not uid or not token or not new_password:
+
+    if not uidb64 or not token or not new_password:
         return Response({'error': 'All fields are required'}, status=status.HTTP_400_BAD_REQUEST)
+
     try:
-        user = CustomUser.objects.get(id=uid)
-    except CustomUser.DoesNotExist:
-        return Response({'error': 'Invalid user'}, status=status.HTTP_404_NOT_FOUND)
+        # Decode UID
+        uid = urlsafe_base64_decode(uidb64).decode()
+        user = CustomUser.objects.get(pk=uid)
+    except (TypeError, ValueError, OverflowError, CustomUser.DoesNotExist):
+        return Response({'error': 'Invalid UID'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Check token validity
     if not PasswordResetTokenGenerator().check_token(user, token):
         return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Set new password
     user.set_password(new_password)
     user.save()
     return Response({'message': 'Password reset successful'}, status=status.HTTP_200_OK)
 
+
+# -----------------------------
+# CHANGE PASSWORD (Authenticated)
+# -----------------------------
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def change_password(request):
     current_password = request.data.get('current_password')
     new_password = request.data.get('new_password')
+
     if not current_password or not new_password:
         return Response({'error': 'Both current and new passwords are required'}, status=status.HTTP_400_BAD_REQUEST)
+
     user = request.user
     if not user.check_password(current_password):
         return Response({'error': 'Current password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
+
     user.set_password(new_password)
     user.save()
     return Response({'message': 'Password changed successfully'}, status=status.HTTP_200_OK)
 
 # -----------------------------
-# BLOG CRUD
+# BLOGS
 # -----------------------------
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -329,25 +493,6 @@ def category_update_delete_view(request, pk):
 
 
 # -----------------------------
-# APPROVE / FLAG BLOG
-# -----------------------------
-@api_view(['POST'])
-@permission_classes([IsAuthenticated, IsEditor])
-def approve_blog(request, blog_id):
-    blog = get_object_or_404(Blog, id=blog_id)
-    blog.is_approved = True
-    blog.save()
-    return Response({"status": "approved"})
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated, IsEditor])
-def flag_blog(request, blog_id):
-    blog = get_object_or_404(Blog, id=blog_id)
-    blog.is_flagged = True
-    blog.save()
-    return Response({"status": "flagged"})
-
-# -----------------------------
 # REACTIONS
 # -----------------------------
 @api_view(['POST'])
@@ -359,9 +504,9 @@ def toggle_reaction(request, blog_id):
     valid_reactions = ['like', 'dislike', 'love', 'laugh', 'angry']
     if reaction_type not in valid_reactions:
         return Response({'error': 'Invalid reaction type'}, status=status.HTTP_400_BAD_REQUEST)
-    
+
     reaction, created = Reaction.objects.get_or_create(user=user, blog=blog)
-    
+
     if not created and reaction.reaction_type == reaction_type:
         reaction.delete()
         return Response({'message': 'Reaction removed'})
@@ -376,7 +521,6 @@ def toggle_reaction(request, blog_id):
                 blog=blog,
                 message=f"{user.username} reacted ({reaction_type}) to your blog '{blog.title}'"
             )
-            send_notification_to_user(blog.author.id, f"{user.username} reacted ({reaction_type}) to your blog '{blog.title}'")
         return Response({'message': f'{reaction_type} added'})
 
 @api_view(['GET'])
@@ -402,7 +546,11 @@ def comment_list_view(request, blog_id):
 @permission_classes([IsAuthenticated])
 def add_comment(request, blog_id):
     blog = get_object_or_404(Blog, id=blog_id)
-    comment = Comment.objects.create(user=request.user, blog=blog, content=request.data.get('content'))
+    content = request.data.get('content')
+    if not content:
+        return Response({'error': 'Content is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    comment = Comment.objects.create(user=request.user, blog=blog, content=content)
 
     if blog.author != request.user:
         Notification.objects.create(
@@ -412,13 +560,8 @@ def add_comment(request, blog_id):
             blog=blog,
             message=f"{request.user.username} commented on your blog"
         )
-        if blog.author.email:
-            send_mail(
-                subject="New Comment on Your Blog",
-                message=f"{request.user.username} commented on your blog.",
-                from_email="noreply@yourdomain.com",
-                recipient_list=[blog.author.email],
-            )
+
+        # Optional: real-time channels notification
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
             f"user_{blog.author.id}",
@@ -431,13 +574,6 @@ def add_comment(request, blog_id):
                 }
             }
         )
-        payload = {
-            "head": "New Comment!",
-            "body": f"{request.user.username} commented on your blog.",
-            "icon": "/static/images/comment-icon.png",
-            "url": f"/blogs/{blog.id}/"
-        }
-        send_user_notification(user=blog.author, payload=payload, ttl=1000)
 
     return Response({"detail": "Comment created successfully."})
 
@@ -468,7 +604,13 @@ def toggle_bookmark(request, blog_id):
 @permission_classes([IsAuthenticated])
 def user_bookmarks(request):
     bookmarks = Bookmark.objects.filter(user=request.user).select_related('blog')
-    data = [{'id': b.blog.id, 'title': b.blog.title, 'created_at': b.blog.created_at} for b in bookmarks]
+    data = [
+        {
+            'id': b.blog.id,
+            'title': b.blog.title,
+            'created_at': b.blog.created_at
+        } for b in bookmarks
+    ]
     return Response(data)
 
 # -----------------------------
@@ -518,17 +660,12 @@ def stats_view(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdmin])
 def admin_dashboard(request):
-    users_count = CustomUser.objects.count()
-    blogs_count = Blog.objects.count()
-    comments_count = Comment.objects.count()
-    reactions_count = Reaction.objects.count()
-    categories_count = Category.objects.count()
     data = {
-        "users": users_count,
-        "blogs": blogs_count,
-        "comments": comments_count,
-        "reactions": reactions_count,
-        "categories": categories_count
+        "users": CustomUser.objects.count(),
+        "blogs": Blog.objects.count(),
+        "comments": Comment.objects.count(),
+        "reactions": Reaction.objects.count(),
+        "categories": Category.objects.count()
     }
     return Response(data)
 
@@ -536,24 +673,16 @@ def admin_dashboard(request):
 @permission_classes([IsAuthenticated, IsAdmin])
 def all_users(request):
     users = CustomUser.objects.all()
-    serializer = UserSerializer(users, many=True)
-    return Response(serializer.data)
+    data = [clean_user_data(u) for u in users]
+    return Response(data)
 
-# -----------------------------
-# ADMIN: Update user role
-# -----------------------------
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsAdmin])
 def update_user_role(request, user_id):
-    try:
-        user = CustomUser.objects.get(id=user_id)
-    except CustomUser.DoesNotExist:
-        return Response({'error': 'User not found'}, status=404)
-
+    user = get_object_or_404(CustomUser, id=user_id)
     new_role = request.data.get('role')
     if new_role not in ['Admin', 'Editor', 'Author', 'Reader']:
         return Response({'error': 'Invalid role'}, status=400)
-
     user.role = new_role
     user.save()
     return Response({'status': 'Role updated successfully'})
@@ -561,11 +690,9 @@ def update_user_role(request, user_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdmin])
 def most_active_users(request):
-    users = CustomUser.objects.annotate(
-        activity_count=Count('useractivity')
-    ).order_by('-activity_count')[:10]
-    serializer = UserSerializer(users, many=True)
-    return Response(serializer.data)
+    users = CustomUser.objects.annotate(activity_count=Count('useractivity')).order_by('-activity_count')[:10]
+    data = [clean_user_data(u) for u in users]
+    return Response(data)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdmin])

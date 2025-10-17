@@ -4,6 +4,7 @@ from taggit.managers import TaggableManager
 from django.utils import timezone
 from django_ckeditor_5.fields import CKEditor5Field
 from markdownx.models import MarkdownxField
+from django.conf import settings
 
 # ====================================
 # USER & PROFILE
@@ -23,12 +24,13 @@ class CustomUser(AbstractUser):
 
 
 class UserActivity(models.Model):
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
-    action = models.CharField(max_length=255)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    activity_type = models.CharField(max_length=100)
+    description = models.TextField(blank=True, null=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.user.username} - {self.action}"
+        return f"{self.user.username} - {self.activity_type}"
 
 
 class Profile(models.Model):
