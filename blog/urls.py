@@ -53,12 +53,20 @@ urlpatterns = [
     # ----------------------------------------------------------
     path('blogs/media/upload/', views.blog_media_upload_view, name='blog-media-upload'),  # Upload images/media for blogs
 
-    # ----------------------------------------------------------
-    #  CATEGORIES MANAGEMENT
-    # ----------------------------------------------------------
-    path('categories/', views.category_list_view, name='category-list'),               # List all categories
-    path('categories/create/', views.category_create_view, name='category-create'),    # Create a new category
-    path('categories/<int:pk>/update-delete/', views.category_update_delete_view, name='category-update-delete'),  # Update/Delete category
+    # -----------------------------
+    # List All Categories
+    # -----------------------------
+    path('categories/', views.category_list_view, name='category-list'),
+
+    # -----------------------------
+    # Create New Category
+    # -----------------------------
+    path('categories/create/', views.category_create_view, name='category-create'),
+
+    # -----------------------------
+    # Update / Delete Category
+    # -----------------------------
+    path('categories/<int:pk>/update-delete/', views.category_update_delete_view, name='category-update-delete'),
 
     # ----------------------------------------------------------
     #  BLOG APPROVAL &  FLAGGING (For Admin/Editor)

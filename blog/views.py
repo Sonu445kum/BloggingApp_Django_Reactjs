@@ -562,43 +562,62 @@ def blog_delete_view(request, pk):
 
 
 # -----------------------------
-# CATEGORIES
+# List All Categories
 # -----------------------------
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def category_list_view(request):
     categories = Category.objects.all()
     serializer = CategorySerializer(categories, many=True)
-    return Response(serializer.data)
+    return Response({"categories": serializer.data}, status=status.HTTP_200_OK)
 
 
-
-# Category Create
+# -----------------------------
+# Create New Category
+# -----------------------------
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def category_create_view(request):
     serializer = CategorySerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(
+            {"message": "Category created successfully", "category": serializer.data},
+            status=status.HTTP_201_CREATED
+        )
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-# Category Update Delete
-@api_view(['PUT', 'DELETE'])
+# -----------------------------
+# Update / Delete Category
+# -----------------------------
+@api_view(['PUT', 'PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def category_update_delete_view(request, pk):
     category = get_object_or_404(Category, pk=pk)
-    if request.method == 'PUT':
+
+    # -----------------
+    # Update Category
+    # -----------------
+    if request.method in ['PUT', 'PATCH']:
         serializer = CategorySerializer(category, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            return Response(serializer.data)
+            return Response(
+                {"message": "Category updated successfully", "category": serializer.data},
+                status=status.HTTP_200_OK
+            )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # -----------------
+    # Delete Category
+    # -----------------
     elif request.method == 'DELETE':
         category.delete()
-        return Response({'message': 'Category deleted'}, status=status.HTTP_204_NO_CONTENT)
-
+        return Response(
+            {"message": "Category deleted successfully"},
+            status=status.HTTP_200_OK
+        )
 
 # -----------------------------
 # REACTIONS
