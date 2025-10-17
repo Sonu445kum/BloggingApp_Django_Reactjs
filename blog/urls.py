@@ -44,7 +44,8 @@ urlpatterns = [
     path('blogs/trending/', views.trending_blogs_view, name='trending-blogs'),         # List trending blogs
     path('blogs/<int:pk>/', views.blog_detail_view, name='blog-detail'),               # View single blog details
     path('blogs/create/', views.blog_create_view, name='blog-create'),                 # Create a new blog
-    path('blogs/<int:pk>/update/', views.blog_update_view, name='blog-update'),        # Update an existing blog
+    path('blogs/<int:pk>/update/', views.blog_update_view, name='blog-update'),
+    path('blogs/<int:pk>/delete/', views.blog_delete_view, name='blog-delete') ,# Update an existing blog
     path('blogs/drafts/', views.draft_blogs_view, name='draft-blogs'),                 # List user’s draft blogs
 
     # ----------------------------------------------------------

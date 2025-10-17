@@ -61,6 +61,9 @@ from taggit.models import Tag
 from rest_framework.permissions import IsAdminUser
 
 
+
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])  # User ko login hona chahiye
 def flag_blog(request, blog_id):
@@ -84,6 +87,9 @@ def flag_blog(request, blog_id):
 
     return Response({'message': 'Blog flagged successfully'}, status=status.HTTP_200_OK)
 
+
+
+
 @api_view(['POST'])
 @permission_classes([IsAdminUser])  # Sirf admin approve kar sakta hai
 def approve_blog(request, blog_id):
@@ -106,6 +112,10 @@ def approve_blog(request, blog_id):
     blog.save()
 
     return Response({'message': 'Blog approved successfully'}, status=status.HTTP_200_OK)
+
+
+
+
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -140,6 +150,7 @@ def tag_suggestions(request):
     return Response(list(tags))
 
 
+
 # ----------------------------
 # 🔹 PROFILE STATUS VIEW
 # ----------------------------
@@ -158,6 +169,8 @@ def profile_status(request):
         "profile_completion": completion
     }
     return Response(data, status=status.HTTP_200_OK)
+
+
 
 
 # ----------------------------
@@ -188,6 +201,8 @@ def activity_logs(request):
     }, status=status.HTTP_200_OK)
 
 
+
+
 # -----------------------------
 # USER DATA CLEAN HELPER
 # -----------------------------
@@ -201,6 +216,8 @@ def clean_user_data(user):
         "email_verified": user.email_verified
     }
 
+
+
 # -----------------------------
 # JWT TOKENS HELPER
 # -----------------------------
@@ -210,6 +227,9 @@ def get_tokens_for_user(user):
         'refresh': str(refresh),
         'access': str(refresh.access_token),
     }
+
+
+
 
 # -----------------------------
 # REGISTER VIEW
@@ -244,6 +264,10 @@ def register_view(request):
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+
+
+
 # -----------------------------
 # LOGIN VIEW
 # -----------------------------
@@ -270,6 +294,11 @@ def login_view(request):
 @permission_classes([IsAuthenticated])
 def current_user_view(request):
     return Response(clean_user_data(request.user))
+
+
+
+
+
 
 # -----------------------------
 # VERIFY EMAIL VIEW
@@ -334,6 +363,8 @@ def request_password_reset(request):
     return Response({'message': 'Password reset link sent to email'}, status=status.HTTP_200_OK)
 
 
+
+
 # -----------------------------
 # RESET PASSWORD
 # -----------------------------
@@ -384,9 +415,15 @@ def change_password(request):
     user.save()
     return Response({'message': 'Password changed successfully'}, status=status.HTTP_200_OK)
 
+
+
+
+
 # -----------------------------
 # BLOGS
 # -----------------------------
+
+# Blogs Create
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def blog_create_view(request):
@@ -396,6 +433,9 @@ def blog_create_view(request):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+
+# Blogs Update View
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def blog_update_view(request, pk):
@@ -408,6 +448,24 @@ def blog_update_view(request, pk):
         return Response(serializer.data)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+# Blogs Delete 
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def blog_delete_view(request, pk):
+    try:
+        blog = Blog.objects.get(pk=pk)
+    except Blog.DoesNotExist:
+        return Response({"error": "Blog not found"}, status=status.HTTP_404_NOT_FOUND)
+    
+    # Only author can delete
+    if blog.author != request.user:
+        return Response({"error": "You are not allowed to delete this blog"}, status=status.HTTP_403_FORBIDDEN)
+    
+    blog.delete()
+    return Response({"message": "Blog deleted successfully"}, status=status.HTTP_200_OK)
+
+# Blogs List Views
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def blog_list_view(request):
@@ -428,13 +486,18 @@ def blog_list_view(request):
     serializer = BlogSerializer(blogs, many=True, context={'request': request})
     return Response(serializer.data)
 
+
+# Drafts Blogs
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated])  # only logged in users can access
 def draft_blogs_view(request):
-    drafts = Blog.objects.filter(author=request.user, status='draft').order_by('-created_at')
-    serializer = BlogSerializer(drafts, many=True, context={'request': request})
+    # Sirf current user ke drafts
+    drafts = Blog.objects.filter(author=request.user, status='draft')
+    serializer = BlogSerializer(drafts, many=True)
     return Response(serializer.data)
 
+
+# Blog Details 
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def blog_detail_view(request, pk):
@@ -442,6 +505,8 @@ def blog_detail_view(request, pk):
     serializer = BlogSerializer(blog, context={'request': request})
     return Response(serializer.data)
 
+
+# Trending Blogs
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def trending_blogs_view(request):
@@ -449,14 +514,52 @@ def trending_blogs_view(request):
     serializer = BlogSerializer(blogs, many=True, context={'request': request})
     return Response(serializer.data)
 
+
+# Blogs Media Upload
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def blog_media_upload_view(request):
-    serializer = BlogMediaSerializer(data=request.data, context={'request': request})
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    """
+    Upload images for a blog.
+    Expected fields:
+    - blog_id (int)
+    - file (image)
+    """
+    blog_id = request.data.get('blog_id')
+    file = request.FILES.get('file')  # image file
+
+    if not blog_id or not file:
+        return Response({"error": "blog_id and file are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        blog = Blog.objects.get(pk=blog_id)
+    except Blog.DoesNotExist:
+        return Response({"error": "Blog not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    # Only author can upload media
+    if blog.author != request.user:
+        return Response({"error": "You are not allowed to upload media to this blog"}, status=status.HTTP_403_FORBIDDEN)
+
+    media = BlogMedia.objects.create(blog=blog, file=file)
+    return Response({"message": "Media uploaded successfully", "media_id": media.id}, status=status.HTTP_201_CREATED)
+
+
+# Blogs Delete
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def blog_delete_view(request, pk):
+    try:
+        blog = Blog.objects.get(pk=pk)
+    except Blog.DoesNotExist:
+        return Response({"error": "Blog not found"}, status=status.HTTP_404_NOT_FOUND)
+    
+    # Only author can delete
+    if blog.author != request.user:
+        return Response({"error": "You are not allowed to delete this blog"}, status=status.HTTP_403_FORBIDDEN)
+    
+    blog.delete()
+    return Response({"message": "Blog deleted successfully"}, status=status.HTTP_200_OK)
+
 
 # -----------------------------
 # CATEGORIES
@@ -468,6 +571,9 @@ def category_list_view(request):
     serializer = CategorySerializer(categories, many=True)
     return Response(serializer.data)
 
+
+
+# Category Create
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def category_create_view(request):
@@ -477,6 +583,8 @@ def category_create_view(request):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+# Category Update Delete
 @api_view(['PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def category_update_delete_view(request, pk):
@@ -522,7 +630,9 @@ def toggle_reaction(request, blog_id):
                 message=f"{user.username} reacted ({reaction_type}) to your blog '{blog.title}'"
             )
         return Response({'message': f'{reaction_type} added'})
+    
 
+# Reactions List
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def reaction_list_view(request, blog_id):
@@ -577,6 +687,9 @@ def add_comment(request, blog_id):
 
     return Response({"detail": "Comment created successfully."})
 
+
+
+# Comment Delete Views
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def comment_delete_view(request, pk):
@@ -585,6 +698,9 @@ def comment_delete_view(request, pk):
         return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
     comment.delete()
     return Response({'message': 'Comment deleted'}, status=status.HTTP_204_NO_CONTENT)
+
+
+
 
 # -----------------------------
 # BOOKMARKS
@@ -600,6 +716,8 @@ def toggle_bookmark(request, blog_id):
         return Response({'message': 'Bookmark removed'})
     return Response({'message': 'Bookmark added'})
 
+
+# User BookMarks
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def user_bookmarks(request):
@@ -612,6 +730,8 @@ def user_bookmarks(request):
         } for b in bookmarks
     ]
     return Response(data)
+
+
 
 # -----------------------------
 # NOTIFICATIONS
@@ -632,6 +752,8 @@ def user_notifications(request):
     ]
     return Response(data)
 
+
+# Notofications Mark Read Views
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def notification_mark_read_view(request, pk):
@@ -639,6 +761,9 @@ def notification_mark_read_view(request, pk):
     notification.is_read = True
     notification.save()
     return Response({'message': 'Notification marked as read'})
+
+
+
 
 # -----------------------------
 # GENERAL STATS
@@ -653,6 +778,8 @@ def stats_view(request):
         'total_reactions': Reaction.objects.count(),
         'total_notifications': Notification.objects.count(),
     })
+
+
 
 # -----------------------------
 # ADMIN DASHBOARD
@@ -669,6 +796,8 @@ def admin_dashboard(request):
     }
     return Response(data)
 
+
+# All Users
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdmin])
 def all_users(request):
@@ -676,6 +805,8 @@ def all_users(request):
     data = [clean_user_data(u) for u in users]
     return Response(data)
 
+
+# Update User Role
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsAdmin])
 def update_user_role(request, user_id):
@@ -687,6 +818,8 @@ def update_user_role(request, user_id):
     user.save()
     return Response({'status': 'Role updated successfully'})
 
+
+# Most active Users
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdmin])
 def most_active_users(request):
@@ -694,6 +827,9 @@ def most_active_users(request):
     data = [clean_user_data(u) for u in users]
     return Response(data)
 
+
+
+# Trending Blogs Admin
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdmin])
 def trending_blogs_admin(request):
