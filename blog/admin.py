@@ -14,14 +14,13 @@ from .models import (
 )
 
 # ----------------------------
-# Simple registrations
+# SIMPLE REGISTRATIONS
 # ----------------------------
 admin.site.register(CustomUser)
 admin.site.register(Profile)
 admin.site.register(Category)
 admin.site.register(Comment)
 admin.site.register(Reaction)
-admin.site.register(Notification)
 admin.site.register(BlogMedia)
 admin.site.register(Bookmark)
 admin.site.register(UserActivity)
@@ -53,7 +52,7 @@ class BlogAdmin(admin.ModelAdmin):
         'published_at', 'created_at', 'updated_at'
     )
 
-    # ✅ Thumbnail preview for featured image
+    #  Thumbnail preview for featured image
     def featured_image_preview(self, obj):
         if obj.featured_image:
             return format_html(
@@ -62,3 +61,41 @@ class BlogAdmin(admin.ModelAdmin):
             )
         return "—"
     featured_image_preview.short_description = 'Featured Image'
+
+
+# ----------------------------
+# NOTIFICATION ADMIN ENHANCEMENT
+# ----------------------------
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'notification_type',
+        'user',
+        'sender_display',
+        'blog',
+        'short_message',
+        'is_read',
+        'created_at'
+    )
+    list_filter = ('notification_type', 'is_read', 'created_at')
+    search_fields = (
+        'user__username',
+        'sender__username',
+        'message',
+        'blog__title'
+    )
+    ordering = ('-created_at',)
+    readonly_fields = ('created_at',)
+    list_per_page = 20
+
+    def sender_display(self, obj):
+        if obj.sender:
+            return obj.sender.username
+        return "System"
+    sender_display.short_description = 'Sender'
+
+    def short_message(self, obj):
+        return (obj.message[:60] + '...') if len(obj.message) > 60 else obj.message
+    short_message.short_description = 'Message'
+

@@ -755,31 +755,50 @@ def user_bookmarks(request):
 # -----------------------------
 # NOTIFICATIONS
 # -----------------------------
+# ----------------------------------------------------------
+# 1️ List all notifications for the logged-in user
+# ----------------------------------------------------------
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def user_notifications(request):
+def user_notifications_view(request):
     notifications = Notification.objects.filter(user=request.user).order_by('-created_at')
-    data = [
-        {
-            "id": n.id,
-            "message": n.message,
-            "type": n.notification_type,
-            "blog_id": n.blog.id if n.blog else None,
-            "is_read": n.is_read,
-            "created_at": n.created_at
-        } for n in notifications
-    ]
-    return Response(data)
+    serializer = NotificationSerializer(notifications, many=True)
+    return Response(serializer.data)
 
 
-# Notofications Mark Read Views
+# ----------------------------------------------------------
+# 2️ Mark a single notification as read
+# ----------------------------------------------------------
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
-def notification_mark_read_view(request, pk):
+def mark_notification_read_view(request, pk):
     notification = get_object_or_404(Notification, pk=pk, user=request.user)
     notification.is_read = True
     notification.save()
-    return Response({'message': 'Notification marked as read'})
+    return Response({'message': ' Notification marked as read successfully'})
+
+
+# ----------------------------------------------------------
+# 3️ Mark all notifications as read
+# ----------------------------------------------------------
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def mark_all_notifications_read_view(request):
+    notifications = Notification.objects.filter(user=request.user, is_read=False)
+    count = notifications.count()
+    notifications.update(is_read=True)
+    return Response({'message': f' {count} notifications marked as read'})
+
+
+# ----------------------------------------------------------
+# 4️ Delete a single notification
+# ----------------------------------------------------------
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_notification_view(request, pk):
+    notification = get_object_or_404(Notification, pk=pk, user=request.user)
+    notification.delete()
+    return Response({'message': ' Notification deleted successfully'})
 
 
 
@@ -855,3 +874,29 @@ def trending_blogs_admin(request):
     blogs = Blog.objects.order_by('-views')[:10]
     serializer = BlogSerializer(blogs, many=True, context={'request': request})
     return Response(serializer.data)
+
+# Approved Blogs
+@api_view(['POST'])
+@permission_classes([IsAdminUser])  # only admin/editor
+def approve_blog(request, blog_id):
+    try:
+        blog = Blog.objects.get(pk=blog_id)
+    except Blog.DoesNotExist:
+        return Response({"error": "Blog not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    blog.status = 'published'  # approve
+    blog.save()
+    return Response({"message": "Blog approved successfully", "blog_id": blog.id}, status=status.HTTP_200_OK)
+
+# Flag Blog
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])  # logged-in users can flag
+def flag_blog(request, blog_id):
+    try:
+        blog = Blog.objects.get(pk=blog_id)
+    except Blog.DoesNotExist:
+        return Response({"error": "Blog not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    blog.is_flagged = True  # example flag field
+    blog.save()
+    return Response({"message": "Blog flagged successfully", "blog_id": blog.id}, status=status.HTTP_200_OK)

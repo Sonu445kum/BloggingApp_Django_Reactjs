@@ -211,13 +211,62 @@ class Notification(models.Model):
         ('announcement', 'Announcement'),
     ]
 
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='notifications')
-    sender = models.ForeignKey(CustomUser, null=True, blank=True, on_delete=models.SET_NULL, related_name='sent_notifications')
-    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPE_CHOICES)
-    blog = models.ForeignKey(Blog, null=True, blank=True, on_delete=models.CASCADE)
+    #  The user who will receive this notification
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='notifications'
+    )
+
+    #  The user who triggered this notification (like/comment)
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='sent_notifications'
+    )
+
+    #  Type of notification (comment, like, etc.)
+    notification_type = models.CharField(
+        max_length=20,
+        choices=NOTIFICATION_TYPE_CHOICES
+    )
+
+    #  Optional: related blog (for comment/like)
+    blog = models.ForeignKey(
+        Blog,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='notifications'
+    )
+
+    #  The actual message displayed to the user
     message = models.TextField()
+
+    #  Whether the user has read this notification or not
     is_read = models.BooleanField(default=False)
+
+    #  Timestamp
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Notification'
+        verbose_name_plural = 'Notifications'
+
     def __str__(self):
-        return f"{self.notification_type} -> {self.user.username}"
+        sender_name = self.sender.username if self.sender else "System"
+        return f"{self.notification_type.title()} from {sender_name} → {self.user.username}"
+
+    #  Helper methods
+    def mark_as_read(self):
+        """Mark this notification as read"""
+        self.is_read = True
+        self.save()
+
+    def mark_as_unread(self):
+        """Mark this notification as unread"""
+        self.is_read = False
+        self.save()

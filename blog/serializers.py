@@ -198,8 +198,24 @@ class UserActivitySerializer(serializers.ModelSerializer):
 # NOTIFICATION SERIALIZER
 # ====================================
 class NotificationSerializer(serializers.ModelSerializer):
+    #  Receiver (notification target user)
     user = CustomUserSerializer(read_only=True)
+    
+    #  Sender (who triggered the notification)
+    sender = CustomUserSerializer(read_only=True)
+    
+    #  Optional: include blog info if attached
+    blog = BlogSerializer(read_only=True)
 
     class Meta:
         model = Notification
-        fields = ['id', 'user', 'message', 'is_read', 'created_at']
+        fields = [
+            'id',
+            'user',
+            'sender',
+            'notification_type',
+            'blog',
+            'message',
+            'is_read',
+            'created_at'
+        ]
