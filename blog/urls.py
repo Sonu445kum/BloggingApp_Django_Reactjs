@@ -13,18 +13,14 @@ urlpatterns = [
     # ----------------------------------------------------------
     #  AUTHENTICATION & USER MANAGEMENT
     # ----------------------------------------------------------
-    path('auth/register/', views.register_view,
-         name='register'),  # User registration
+    path('auth/register/', views.register_view, name='register'),  # User registration
     # User login with JWT
     path('auth/login/', views.login_view, name='login'),
-    path('auth/current-user/', views.current_user_view,
-         name='current-user'),          # Get current logged-in user info
+    path('auth/current-user/', views.current_user_view,  name='current-user'),          # Get current logged-in user info
     # Verify user email after registration
     path('auth/verify-email/', views.verify_email, name='verify-email'),
-    path('auth/request-password-reset/', views.request_password_reset,
-         name='request-password-reset'),  # Request password reset link
-    path('auth/reset-password/', views.reset_password,
-         name='reset-password'),         # Reset password via token
+    path('auth/request-password-reset/', views.request_password_reset, name='request-password-reset'),  # Request password reset link
+    path('auth/reset-password/', views.reset_password, name='reset-password'),         # Reset password via token
     # Change password (logged-in users only)
     path('auth/change-password/', views.change_password, name='change-password'),
 

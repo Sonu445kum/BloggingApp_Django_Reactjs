@@ -875,6 +875,8 @@ def trending_blogs_admin(request):
     serializer = BlogSerializer(blogs, many=True, context={'request': request})
     return Response(serializer.data)
 
+
+
 # Approved Blogs
 @api_view(['POST'])
 @permission_classes([IsAdminUser])  # only admin/editor
