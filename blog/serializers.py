@@ -5,6 +5,7 @@ from .models import (
 )
 from taggit.serializers import TagListSerializerField, TaggitSerializer
 from django.contrib.auth import authenticate
+from .models import CustomUser
 
 # ====================================
 # REGISTER SERIALIZER
@@ -34,18 +35,20 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
     def validate(self, data):
-        """
-        Authenticate user using username and password.
-        Raises error if credentials are invalid.
-        """
-        user = authenticate(username=data['username'], password=data['password'])
+        username = data.get("username")
+        password = data.get("password")
+
+        if not username or not password:
+            raise serializers.ValidationError("Username and password are required")
+
+        user = authenticate(username=username, password=password)
         if not user:
             raise serializers.ValidationError("Invalid credentials")
         if not user.is_active:
-            raise serializers.ValidationError("User account is disabled")
+            raise serializers.ValidationError("Account not active. Verify your email first.")
+
         data['user'] = user
         return data
-
 
 # ====================================
 # CUSTOM USER SERIALIZER (For nested usage)
@@ -56,9 +59,6 @@ class CustomUserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'email', 'role', 'email_verified']  # first_name & last_name removed
 
 
-# ====================================
-# PROFILE SERIALIZER
-# ====================================
 class ProfileSerializer(serializers.ModelSerializer):
     user = CustomUserSerializer(read_only=True)
     followers_count = serializers.SerializerMethodField()
@@ -80,6 +80,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     def get_bookmarks_count(self, obj):
         return obj.bookmarks.count()
+
 
 
 # ====================================

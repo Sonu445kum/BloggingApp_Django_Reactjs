@@ -19,6 +19,11 @@ class CustomUser(AbstractUser):
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='reader')
     email_verified = models.BooleanField(default=False)  # Added field for serializer
 
+    # Add saved blogs
+    saved_blogs = models.ManyToManyField(
+        'Blog', blank=True, related_name='saved_by_users'
+    )
+
     def __str__(self):
         return self.username
 

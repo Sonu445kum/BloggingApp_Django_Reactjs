@@ -5,39 +5,30 @@ from django.conf.urls.static import static
 from django.http import JsonResponse
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-# -------------------------
-# Root view
-# -------------------------
+# Root API view
 def root_view(request):
-    """
-    Handles the root URL '/'.
-    Returns a simple JSON message to verify the API is running.
-    """
     return JsonResponse({"message": "Welcome to the Blogging Platform API"})
 
-# -------------------------
-# URL patterns
-# -------------------------
 urlpatterns = [
     # Root URL
-    path('', root_view, name='root'),  # API root endpoint
+    path('', root_view, name='root'),
 
-    # Django admin panel
+    # Django admin
     path('admin/', admin.site.urls),
 
-    # Social authentication (Google, Facebook, GitHub via Django Allauth)
+    # Social auth via allauth
     path('accounts/', include('allauth.urls')),
 
-    # Blog app API endpoints
-    path('api/', include('blog.urls')),  # Include all URLs from the 'blog' app
+    # -----------------------
+    # Blog app APIs
+    # -----------------------
+    path('api/', include('blog.urls')),  # Include all blog app endpoints under /api/
 
-    # JWT authentication endpoints
-    path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),  # Get JWT token
-    path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),      # Refresh JWT token
+    # JWT auth (if you want token endpoints separate)
+    path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 ]
 
-# -------------------------
-# Serve media files during development
-# -------------------------
+# Serve media during development
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

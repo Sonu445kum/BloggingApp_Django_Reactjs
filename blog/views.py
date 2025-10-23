@@ -1,28 +1,27 @@
 # -------------------------
-# Django & Python imports
+# Django & DRF Imports
 # -------------------------
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.core.mail import send_mail
 from django.conf import settings
 from django.urls import reverse
+from django.db.models import Count
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
-from django.contrib.sites.shortcuts import get_current_site
-from django.db.models import Q, Count
 
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework.response import Response
 from rest_framework import status
+from .permissions import IsAdmin
 
-from django.utils.http import urlsafe_base64_encode
-from django.utils.encoding import force_bytes
-from django.contrib.auth.tokens import default_token_generator, PasswordResetTokenGenerator
 
 # -------------------------
-# JWT & auth tokens
+# JWT Tokens
 # -------------------------
-from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
+from rest_framework_simplejwt.tokens import RefreshToken
 
 # -------------------------
 # Channels / WebSockets
@@ -37,13 +36,6 @@ from taggit.models import Tag
 from webpush import send_user_notification
 
 # -------------------------
-# Custom permissions
-# -------------------------
-from .permissions import IsAdmin, IsEditor
-
-
-
-# -------------------------
 # Models & Serializers
 # -------------------------
 from .models import (
@@ -56,88 +48,50 @@ from .serializers import (
     NotificationSerializer, RegisterSerializer, LoginSerializer
 )
 from .utils import profile_completion
-
-from taggit.models import Tag
-from rest_framework.permissions import IsAdminUser
-
+from .tokens import account_activation_token
+from django.contrib.auth import get_user_model
 
 
 
 
+
+
+# -------------------------
+# BLOG ACTIONS
+# -------------------------
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])  # User ko login hona chahiye
+@permission_classes([IsAuthenticated])
 def flag_blog(request, blog_id):
-    """
-    User ke liye blog ko inappropriate mark karne ka endpoint
-    URL: /blogs/<int:blog_id>/flag/
-    Method: POST
-    """
-    try:
-        blog = Blog.objects.get(id=blog_id)
-    except Blog.DoesNotExist:
-        return Response({'error': 'Blog not found'}, status=status.HTTP_404_NOT_FOUND)
-
-    # Agar already flagged hai
+    blog = get_object_or_404(Blog, id=blog_id)
     if request.user in blog.flagged_by.all():
         return Response({'message': 'You have already flagged this blog'}, status=status.HTTP_200_OK)
-
-    # Flagging logic (assuming Blog model me ManyToMany field 'flagged_by' hai)
     blog.flagged_by.add(request.user)
     blog.save()
-
     return Response({'message': 'Blog flagged successfully'}, status=status.HTTP_200_OK)
 
-
-
-
 @api_view(['POST'])
-@permission_classes([IsAdminUser])  # Sirf admin approve kar sakta hai
+@permission_classes([IsAdminUser])
 def approve_blog(request, blog_id):
-    """
-    Admin ke liye blog approve karne ka endpoint
-    URL: /blogs/<int:blog_id>/approve/
-    Method: POST
-    """
-    try:
-        blog = Blog.objects.get(id=blog_id)
-    except Blog.DoesNotExist:
-        return Response({'error': 'Blog not found'}, status=status.HTTP_404_NOT_FOUND)
-
-    if blog.is_approved:  # Agar already approved hai
+    blog = get_object_or_404(Blog, id=blog_id)
+    if blog.is_approved:
         return Response({'message': 'Blog is already approved'}, status=status.HTTP_200_OK)
-
     blog.is_approved = True
-    blog.approved_by = request.user  # Agar model me approved_by field hai
-    blog.approved_at = timezone.now()  # Agar model me approved_at field hai
+    blog.approved_by = request.user
+    blog.approved_at = timezone.now()
     blog.save()
-
     return Response({'message': 'Blog approved successfully'}, status=status.HTTP_200_OK)
-
-
-
-
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def top_blogs_api(request):
-    """
-    API to fetch top 5 blogs based on number of reactions
-    """
-    top_blogs = Blog.objects.annotate(
-        reactions_count=Count('reaction')
-    ).order_by('-reactions_count')[:5]
-
-    # Serialize data manually (or use a serializer if you have one)
-    data = []
-    for blog in top_blogs:
-        data.append({
-            'id': blog.id,
-            'title': blog.title,
-            'author': blog.author.username,
-            'reactions_count': blog.reactions_count,
-            'created_at': blog.created_at,
-        })
-
+    top_blogs = Blog.objects.annotate(reactions_count=Count('reaction')).order_by('-reactions_count')[:5]
+    data = [{
+        'id': blog.id,
+        'title': blog.title,
+        'author': blog.author.username,
+        'reactions_count': blog.reactions_count,
+        'created_at': blog.created_at,
+    } for blog in top_blogs]
     return Response(data)
 
 @api_view(['GET'])
@@ -149,142 +103,101 @@ def tag_suggestions(request):
     tags = Tag.objects.filter(name__istartswith=q).values_list('name', flat=True)[:10]
     return Response(list(tags))
 
-
-
-# ----------------------------
-# 🔹 PROFILE STATUS VIEW
-# ----------------------------
+# -------------------------
+# PROFILE & ACTIVITY
+# -------------------------
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def profile_status(request):
+def profile(request):
     user = request.user
     completion = profile_completion(user)
-
-    data = {
+    return Response({
         "id": user.id,
         "username": user.username,
         "email": user.email,
         "role": getattr(user, 'role', 'reader'),
         "email_verified": getattr(user, 'email_verified', False),
         "profile_completion": completion
-    }
-    return Response(data, status=status.HTTP_200_OK)
-
-
-
-
-# ----------------------------
-# 🔹 ACTIVITY LOGS VIEW
-# ----------------------------
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def activity_logs(request):
-    """
-    Return a list of recent user activities for the logged-in user.
-    """
-    user = request.user
-    logs = UserActivity.objects.filter(user=user).order_by('-timestamp')[:20]
-
-    log_data = [
-        {
-            "activity_type": log.activity_type,
-            "description": log.description,
-            "timestamp": log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-        }
-        for log in logs
-    ]
-
-    return Response({
-        "user": user.username,
-        "total_logs": len(log_data),
-        "recent_activities": log_data
     }, status=status.HTTP_200_OK)
 
 
-
-
 # -----------------------------
-# USER DATA CLEAN HELPER
+# Update Profile
 # -----------------------------
-def clean_user_data(user):
-    """Return user dict without first_name/last_name"""
-    return {
-        "id": user.id,
-        "username": user.username,
-        "email": user.email,
-        "role": user.role,
-        "email_verified": user.email_verified
-    }
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def profile_update_view(request):
+    # This ensures a profile exists for the user
+    profile, created = Profile.objects.get_or_create(user=request.user)
+    
+    serializer = ProfileSerializer(profile, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def activity_logs(request):
+    logs = UserActivity.objects.filter(user=request.user).order_by('-timestamp')[:20]
+    data = [{
+        "activity_type": log.activity_type,
+        "description": log.description,
+        "timestamp": log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+    } for log in logs]
+    return Response({
+        "user": request.user.username,
+        "total_logs": len(data),
+        "recent_activities": data
+    })
 
+# -------------------------
+# AUTH VIEWS
+# -------------------------
+from .views_helpers import get_tokens_for_user, clean_user_data
 
-# -----------------------------
-# JWT TOKENS HELPER
-# -----------------------------
-def get_tokens_for_user(user):
-    refresh = RefreshToken.for_user(user)
-    return {
-        'refresh': str(refresh),
-        'access': str(refresh.access_token),
-    }
+User = get_user_model()
 
-
-
-
-# -----------------------------
-# REGISTER VIEW
-# -----------------------------
+# --------------------- REGISTER ---------------------
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_view(request):
-    serializer = RegisterSerializer(data=request.data)
-    if serializer.is_valid():
-        user = serializer.save()
-        tokens = get_tokens_for_user(user)
+    username = request.data.get('username')
+    email = request.data.get('email')
+    password = request.data.get('password')
 
-        # Generate email verification UID and token
-        uid = urlsafe_base64_encode(force_bytes(user.pk))
-        token = default_token_generator.make_token(user)
-        verification_link = f"{settings.FRONTEND_URL}/verify-email/?uid={uid}&token={token}"
+    if not username or not email or not password:
+        return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Send verification email
-        send_mail(
-            'Verify Your Email',
-            f'Hi {user.username}, click the link to verify your email: {verification_link}',
-            settings.DEFAULT_FROM_EMAIL,
-            [user.email],
-            fail_silently=False
-        )
+    if User.objects.filter(username=username).exists():
+        return Response({"error": "Username already taken."}, status=status.HTTP_400_BAD_REQUEST)
+    if User.objects.filter(email=email).exists():
+        return Response({"error": "Email already registered."}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response({
-            "message": "User registered successfully! Check your email for verification link.",
-            "user": clean_user_data(user),
-            "tokens": tokens
-        }, status=status.HTTP_201_CREATED)
+    # Create user inactive
+    user = User.objects.create_user(username=username, email=email, password=password)
+    user.is_active = False
+    user.save()
 
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    # Generate email verification link
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = account_activation_token.make_token(user)
+    frontend_url = getattr(settings, "FRONTEND_URL", None)
+    if not frontend_url:
+        return Response({"error": "FRONTEND_URL not set in settings."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    verification_link = f"{frontend_url}/verify-email/?uid={uid}&token={token}"
 
+    # Send email
+    send_mail(
+        "Verify your email",
+        f"Hi {user.username}, click the link to verify your email: {verification_link}",
+        settings.DEFAULT_FROM_EMAIL,
+        [email],
+        fail_silently=False
+    )
 
-
-
-# -----------------------------
-# LOGIN VIEW
-# -----------------------------
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def login_view(request):
-    serializer = LoginSerializer(data=request.data)
-    if serializer.is_valid():
-        user = serializer.validated_data['user']
-        tokens = get_tokens_for_user(user)
-        return Response({
-            "message": "Login successful",
-            "user": clean_user_data(user),
-            "tokens": tokens
-        }, status=status.HTTP_200_OK)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+    return Response({"message": "Registered successfully. Check email to activate account."}, status=status.HTTP_201_CREATED)
 
 
 # -----------------------------
@@ -298,12 +211,7 @@ def current_user_view(request):
 
 
 
-
-
-# -----------------------------
-# VERIFY EMAIL VIEW
-# -----------------------------
-from django.utils.http import urlsafe_base64_decode
+# --------------------- VERIFY EMAIL ---------------------
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def verify_email(request):
@@ -311,48 +219,54 @@ def verify_email(request):
     token = request.GET.get('token')
 
     if not uidb64 or not token:
-        return Response({'error': 'Missing uid or token'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "Missing UID or token"}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        # Decode the UID
-        uid = urlsafe_base64_decode(uidb64).decode()
-        user = CustomUser.objects.get(pk=uid)
-    except (TypeError, ValueError, OverflowError, CustomUser.DoesNotExist):
-        return Response({'error': 'Invalid UID'}, status=status.HTTP_400_BAD_REQUEST)
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk=uid)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        return Response({"error": "Invalid UID"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Check token validity
-    if default_token_generator.check_token(user, token):
-        if user.email_verified:
-            return Response({'message': 'Email already verified'}, status=status.HTTP_200_OK)
-        
-        # Mark email as verified
-        user.email_verified = True
+    if account_activation_token.check_token(user, token):
+        user.is_active = True
         user.save()
-        return Response({'message': 'Email successfully verified'}, status=status.HTTP_200_OK)
-    
-    return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"message": "Email verified! You can now log in."}, status=status.HTTP_200_OK)
+    else:
+        return Response({"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST)
 
-# -----------------------------
-# REQUEST PASSWORD RESET
-# -----------------------------
+
+# --------------------- LOGIN ---------------------
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def login_view(request):
+    serializer = LoginSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.validated_data['user']
+        tokens = get_tokens_for_user(user)
+
+        return Response({
+            "message": "Login successful",
+            "user": clean_user_data(user),
+            "tokens": tokens
+        }, status=status.HTTP_200_OK)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def request_password_reset(request):
     email = request.data.get('email')
     if not email:
         return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
-
     try:
-        user = CustomUser.objects.get(email=email)
-    except CustomUser.DoesNotExist:
+        user = User.objects.get(email=email)
+    except User.DoesNotExist:
         return Response({'error': 'No user found with this email'}, status=status.HTTP_404_NOT_FOUND)
 
-    # Generate UID and token
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = PasswordResetTokenGenerator().make_token(user)
     reset_url = f"{settings.FRONTEND_URL}/reset-password/?uid={uid}&token={token}"
 
-    # Send reset email
     send_mail(
         'Password Reset Request',
         f'Hi {user.username}, click the link to reset your password: {reset_url}',
@@ -362,55 +276,35 @@ def request_password_reset(request):
     )
     return Response({'message': 'Password reset link sent to email'}, status=status.HTTP_200_OK)
 
-
-
-
-# -----------------------------
-# RESET PASSWORD
-# -----------------------------
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def reset_password(request):
     uidb64 = request.data.get('uid')
     token = request.data.get('token')
     new_password = request.data.get('new_password')
-
     if not uidb64 or not token or not new_password:
         return Response({'error': 'All fields are required'}, status=status.HTTP_400_BAD_REQUEST)
-
     try:
-        # Decode UID
         uid = urlsafe_base64_decode(uidb64).decode()
-        user = CustomUser.objects.get(pk=uid)
-    except (TypeError, ValueError, OverflowError, CustomUser.DoesNotExist):
+        user = User.objects.get(pk=uid)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
         return Response({'error': 'Invalid UID'}, status=status.HTTP_400_BAD_REQUEST)
-
-    # Check token validity
     if not PasswordResetTokenGenerator().check_token(user, token):
         return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
-
-    # Set new password
     user.set_password(new_password)
     user.save()
     return Response({'message': 'Password reset successful'}, status=status.HTTP_200_OK)
 
-
-# -----------------------------
-# CHANGE PASSWORD (Authenticated)
-# -----------------------------
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def change_password(request):
     current_password = request.data.get('current_password')
     new_password = request.data.get('new_password')
-
     if not current_password or not new_password:
         return Response({'error': 'Both current and new passwords are required'}, status=status.HTTP_400_BAD_REQUEST)
-
     user = request.user
     if not user.check_password(current_password):
         return Response({'error': 'Current password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
-
     user.set_password(new_password)
     user.save()
     return Response({'message': 'Password changed successfully'}, status=status.HTTP_200_OK)
@@ -419,61 +313,139 @@ def change_password(request):
 
 
 
-# -----------------------------
-# BLOGS
-# -----------------------------
+# -------------------------------
+# ADD TO NEW BLOG (COPY)
+# -------------------------------
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def add_to_blog_view(request, pk):
+    """
+    Creates a copy of an existing blog as a draft for the logged-in user.
+    """
+    try:
+        original_blog = Blog.objects.get(id=pk)
 
-# Blogs Create
+        # Create new blog, handling required fields
+        new_blog = Blog.objects.create(
+            title=f"Copy of {original_blog.title}",
+            content=original_blog.content,
+            author=request.user,
+            status="draft",
+            category=original_blog.category if original_blog.category else None
+        )
+
+        # Copy tags if exist
+        if original_blog.tags.exists():
+            new_blog.tags.set(original_blog.tags.all())
+
+        return Response(
+            {"message": "New blog created successfully!", "id": new_blog.id},
+            status=status.HTTP_201_CREATED
+        )
+
+    except Blog.DoesNotExist:
+        return Response({"error": "Original blog not found"}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# -------------------------------
+# CREATE BLOG
+# -------------------------------
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def blog_create_view(request):
-    serializer = BlogSerializer(data=request.data, context={'request': request})
+    """
+    Create a new blog (Draft or Published) with optional media upload.
+    """
+    data = request.data.copy()
+
+    # Use serializer for main blog data
+    serializer = BlogSerializer(data=data, context={'request': request})
+
     if serializer.is_valid():
-        serializer.save(author=request.user)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        blog = serializer.save(author=request.user)
+
+        # Handle single/multiple media files
+        files = request.FILES.getlist('file')  # match frontend key
+        for f in files:
+            BlogMedia.objects.create(blog=blog, file=f)
+
+        # Default status = draft if not provided
+        if not blog.status:
+            blog.status = 'draft'
+            blog.save()
+
+        return Response({
+            "message": "Blog created successfully",
+            "blog": BlogSerializer(blog, context={'request': request}).data
+        }, status=status.HTTP_201_CREATED)
+    
+    # If serializer invalid, return errors
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
-# Blogs Update View
+# -------------------------------
+# UPDATE BLOG
+# -------------------------------
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def blog_update_view(request, pk):
+    """
+    Update a blog. Only the author can update.
+    """
     blog = get_object_or_404(Blog, pk=pk)
+
+    # Check if current user is author
     if blog.author != request.user:
         return Response({'error': "You cannot edit someone else's blog"}, status=status.HTTP_403_FORBIDDEN)
+
     serializer = BlogSerializer(blog, data=request.data, partial=True, context={'request': request})
+
     if serializer.is_valid():
         serializer.save()
-        return Response(serializer.data)
+        return Response({
+            "message": "Blog updated successfully",
+            "blog": serializer.data
+        }, status=status.HTTP_200_OK)
+
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-# Blogs Delete 
+# -------------------------------
+# DELETE BLOG
+# -------------------------------
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def blog_delete_view(request, pk):
-    try:
-        blog = Blog.objects.get(pk=pk)
-    except Blog.DoesNotExist:
-        return Response({"error": "Blog not found"}, status=status.HTTP_404_NOT_FOUND)
-    
-    # Only author can delete
+    """
+    Delete a blog. Only the author can delete.
+    """
+    blog = get_object_or_404(Blog, pk=pk)
+
     if blog.author != request.user:
         return Response({"error": "You are not allowed to delete this blog"}, status=status.HTTP_403_FORBIDDEN)
-    
+
     blog.delete()
     return Response({"message": "Blog deleted successfully"}, status=status.HTTP_200_OK)
 
-# Blogs List Views
+
+# -------------------------------
+# BLOG LIST (FILTERS + SEARCH)
+# -------------------------------
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def blog_list_view(request):
+    """
+    List all published blogs. Supports search, category, tag, and author filters.
+    """
     search = request.query_params.get('search', '')
     category = request.query_params.get('category', '')
     tag = request.query_params.get('tag', '')
     author = request.query_params.get('author', '')
+
     blogs = Blog.objects.filter(status='published')
+
     if search:
         blogs = blogs.filter(Q(title__icontains=search) | Q(content__icontains=search))
     if category:
@@ -482,83 +454,88 @@ def blog_list_view(request):
         blogs = blogs.filter(tags__name__iexact=tag)
     if author:
         blogs = blogs.filter(author__username__iexact=author)
+
     blogs = blogs.order_by('-published_at')
     serializer = BlogSerializer(blogs, many=True, context={'request': request})
-    return Response(serializer.data)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-# Drafts Blogs
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])  # only logged in users can access
-def draft_blogs_view(request):
-    # Sirf current user ke drafts
-    drafts = Blog.objects.filter(author=request.user, status='draft')
-    serializer = BlogSerializer(drafts, many=True)
-    return Response(serializer.data)
-
-
-# Blog Details 
+# -------------------------------
+# BLOG DETAILS
+# -------------------------------
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def blog_detail_view(request, pk):
+    """
+    Fetch details of a specific blog and increment view count.
+    """
     blog = get_object_or_404(Blog, pk=pk)
+
+    # Increase view count
+    blog.views += 1
+    blog.save(update_fields=['views'])
+
     serializer = BlogSerializer(blog, context={'request': request})
-    return Response(serializer.data)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-# Trending Blogs
+# -------------------------------
+# DRAFT BLOGS (USER SPECIFIC)
+# -------------------------------
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def draft_blogs_view(request):
+    """
+    Get all draft blogs of logged-in user.
+    """
+    drafts = Blog.objects.filter(author=request.user, status='draft').order_by('-created_at')
+    serializer = BlogSerializer(drafts, many=True, context={'request': request})
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# -------------------------------
+# TRENDING BLOGS
+# -------------------------------
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def trending_blogs_view(request):
+    """
+    Fetch top 10 trending blogs by view count.
+    """
     blogs = Blog.objects.filter(status='published').order_by('-views')[:10]
     serializer = BlogSerializer(blogs, many=True, context={'request': request})
-    return Response(serializer.data)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-# Blogs Media Upload
+# -------------------------------
+# MEDIA UPLOAD (BLOG IMAGES/VIDEOS)
+# -------------------------------
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def blog_media_upload_view(request):
     """
-    Upload images for a blog.
-    Expected fields:
-    - blog_id (int)
-    - file (image)
+    Upload media (images/videos) to a specific blog. Only author can upload.
     """
     blog_id = request.data.get('blog_id')
-    file = request.FILES.get('file')  # image file
+    files = request.FILES.getlist('file')  # match frontend FormData key
 
-    if not blog_id or not file:
-        return Response({"error": "blog_id and file are required"}, status=status.HTTP_400_BAD_REQUEST)
+    if not blog_id or not files:
+        return Response({"error": "blog_id and file(s) are required"}, status=status.HTTP_400_BAD_REQUEST)
 
-    try:
-        blog = Blog.objects.get(pk=blog_id)
-    except Blog.DoesNotExist:
-        return Response({"error": "Blog not found"}, status=status.HTTP_404_NOT_FOUND)
+    blog = get_object_or_404(Blog, pk=blog_id)
 
-    # Only author can upload media
     if blog.author != request.user:
         return Response({"error": "You are not allowed to upload media to this blog"}, status=status.HTTP_403_FORBIDDEN)
 
-    media = BlogMedia.objects.create(blog=blog, file=file)
-    return Response({"message": "Media uploaded successfully", "media_id": media.id}, status=status.HTTP_201_CREATED)
+    uploaded_media = []
+    for f in files:
+        media = BlogMedia.objects.create(blog=blog, file=f)
+        uploaded_media.append({"id": media.id, "file": media.file.url})
 
-
-# Blogs Delete
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
-def blog_delete_view(request, pk):
-    try:
-        blog = Blog.objects.get(pk=pk)
-    except Blog.DoesNotExist:
-        return Response({"error": "Blog not found"}, status=status.HTTP_404_NOT_FOUND)
-    
-    # Only author can delete
-    if blog.author != request.user:
-        return Response({"error": "You are not allowed to delete this blog"}, status=status.HTTP_403_FORBIDDEN)
-    
-    blog.delete()
-    return Response({"message": "Blog deleted successfully"}, status=status.HTTP_200_OK)
+    return Response({
+        "message": "Media uploaded successfully",
+        "media": uploaded_media
+    }, status=status.HTTP_201_CREATED)
 
 
 # -----------------------------
