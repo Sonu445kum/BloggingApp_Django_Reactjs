@@ -17,7 +17,8 @@ class CustomUser(AbstractUser):
         ('reader', 'Reader'),
     ]
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='reader')
-    email_verified = models.BooleanField(default=False)  # Added field for serializer
+    email_verified = models.BooleanField(default=True)  # Added field for serializer
+    is_active = models.BooleanField(default=True)
 
     # Add saved blogs
     saved_blogs = models.ManyToManyField(

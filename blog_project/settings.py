@@ -182,6 +182,7 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
 CORS_ALLOW_HEADERS = list(default_headers) + [
     "Authorization",
 ]
+PASSWORD_RESET_TIMEOUT = 60 * 60 * 24 * 3  # 3 days
 
 # Optional: if you want to allow all origins in dev
 # CORS_ALLOW_ALL_ORIGINS = True

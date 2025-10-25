@@ -13,5 +13,6 @@ def clean_user_data(user):
         "username": user.username,
         "email": user.email,
         "role": getattr(user, "role", "reader"),
-        "email_verified": user.is_active
+        "email_verified": user.is_active,
+        
     }
