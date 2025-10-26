@@ -193,4 +193,11 @@ urlpatterns = [
 
     # Delete a reaction by ID
     path('api/admin/reactions/<int:pk>/delete/', views.reaction_delete, name='delete-reaction'),
+
+    # Dashboard stats endpoint (admin only)
+    path('api/admin/dashboard-stats/', views.dashboard_stats, name='dashboard-stats'),
+
+    # Delete User
+    path("api/users/<int:pk>/delete/", views.delete_user, name="delete_user"),
+    path("users/<int:pk>/delete/", views.delete_user, name="delete_user"),
 ]

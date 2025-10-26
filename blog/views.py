@@ -16,9 +16,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework.response import Response
 from rest_framework import status
-from .permissions import IsAdmin,IsAdminOrOwner
+from .permissions import IsAdmin, IsAdminOrOwner
 from django.contrib.auth.tokens import default_token_generator
-
 
 
 # -------------------------
@@ -192,6 +191,8 @@ def activity_logs(request):
 User = get_user_model()
 
 # --------------------- REGISTER ---------------------
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_view(request):
@@ -207,7 +208,8 @@ def register_view(request):
     if User.objects.filter(email=email).exists():
         return Response({"error": "Email already registered."}, status=status.HTTP_400_BAD_REQUEST)
 
-    user = User.objects.create_user(username=username, email=email, password=password, is_active=False)
+    user = User.objects.create_user(
+        username=username, email=email, password=password, is_active=False)
 
     # Send verification email
     uid = urlsafe_base64_encode(force_bytes(user.pk))
@@ -296,8 +298,6 @@ def send_activation_email(user, request=None):
         return False
 
 
-
-
 # --------------------- LOGIN ---------------------
 @api_view(['POST'])
 @permission_classes([AllowAny])  # <-- important
@@ -311,19 +311,20 @@ def login_view(request):
     access_token = str(refresh.access_token)
 
     return Response({
-    "message": "You are logged in successfully!",
-    "user": {
-        "id": user.id,
-        "username": user.username,
-        "email": user.email,
-        "is_active": user.is_active,
-        "is_admin": True if getattr(user, 'role', '').lower() == 'admin' else False,
-    },
-    "tokens": {
-        "refresh": str(refresh),
-        "access": access_token,
-    }
-}, status=status.HTTP_200_OK)
+        "message": "You are logged in successfully!",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "is_active": user.is_active,
+            "is_admin": True if getattr(user, 'role', '').lower() == 'admin' else False,
+        },
+        "tokens": {
+            "refresh": str(refresh),
+            "access": access_token,
+        }
+    }, status=status.HTTP_200_OK)
+
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -376,6 +377,7 @@ def reset_password(request):
     user.set_password(new_password)
     user.save()
     return Response({'message': 'Password reset successful'}, status=status.HTTP_200_OK)
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -955,6 +957,8 @@ def approve_blog(request, blog_id):
     return Response({"message": "Blog approved successfully", "blog_id": blog.id}, status=status.HTTP_200_OK)
 
 # Flag Blog
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])  # logged-in users can flag
 def flag_blog(request, blog_id):
@@ -969,6 +973,8 @@ def flag_blog(request, blog_id):
 
 # Admin Comments
 #  Admin can see all comments
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdminUser])
 def get_all_comments_view(request):
@@ -977,6 +983,8 @@ def get_all_comments_view(request):
     return Response(serializer.data)
 
 #  Admin can approve a comment
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsAdminUser])
 def approve_comment_view(request, pk):
@@ -986,6 +994,8 @@ def approve_comment_view(request, pk):
     return Response({'message': 'Comment approved successfully'}, status=status.HTTP_200_OK)
 
 #  Admin or Comment Owner can delete
+
+
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def comment_delete_view(request, pk):
@@ -997,7 +1007,6 @@ def comment_delete_view(request, pk):
 
     comment.delete()
     return Response({'message': 'Comment deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
-
 
 
 # -------------------------------
@@ -1012,6 +1021,8 @@ def get_admin_notifications(request):
 # -------------------------------
 # PATCH: Mark notification as read
 # -------------------------------
+
+
 @api_view(['PATCH'])
 def mark_notification_read(request, pk):
     try:
@@ -1025,6 +1036,8 @@ def mark_notification_read(request, pk):
 # -------------------------------
 # DELETE notification
 # -------------------------------
+
+
 @api_view(['DELETE'])
 def delete_notification(request, pk):
     try:
@@ -1033,7 +1046,7 @@ def delete_notification(request, pk):
         return Response({"message": "Notification deleted successfully"})
     except Notification.DoesNotExist:
         return Response({"error": "Notification not found"}, status=status.HTTP_404_NOT_FOUND)
-    
+
 
 # ------------------------------
 # List All Reactions (Admin)
@@ -1066,3 +1079,30 @@ def reaction_delete(request, pk):
         return Response({"detail": "Reaction deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
     except Reaction.DoesNotExist:
         return Response({"detail": "Reaction not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+# dashboard stats
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def dashboard_stats(request):
+    stats = {
+        'users': CustomUser.objects.count(),
+        'blogs': Blog.objects.count(),
+        'categories': Category.objects.count(),
+        'comments': Comment.objects.count(),
+        'notifications': Notification.objects.count(),
+        'reactions': Reaction.objects.count(),
+    }
+    return Response(stats)
+
+
+# Delete User
+@api_view(['DELETE'])
+@permission_classes([IsAdminUser])
+def delete_user(request, pk):
+    try:
+        user = User.objects.get(pk=pk)
+        user.delete()
+        return Response({"message": "User deleted successfully"}, status=status.HTTP_200_OK)
+    except User.DoesNotExist:
+        return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
