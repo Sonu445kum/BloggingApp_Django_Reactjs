@@ -200,4 +200,9 @@ urlpatterns = [
     # Delete User
     path("api/users/<int:pk>/delete/", views.delete_user, name="delete_user"),
     path("users/<int:pk>/delete/", views.delete_user, name="delete_user"),
+   
+    path('users/<int:pk>/update/', views.update_user, name='update-user'),
+
+    # Add new user by admin
+     path("users/add/", views.add_user, name="add-user"),
 ]
