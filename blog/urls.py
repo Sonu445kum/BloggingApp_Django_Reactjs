@@ -205,4 +205,7 @@ urlpatterns = [
 
     # Add new user by admin
      path("users/add/", views.add_user, name="add-user"),
+
+     path('admin/blogs/<int:pk>/update/', views.update_blog_admin, name='update_blog'),
+     path('admin/blogs/<int:pk>/delete/', views.delete_blog_admin, name='delete_blog'),
 ]

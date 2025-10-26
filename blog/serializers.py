@@ -323,6 +323,7 @@ class CategorySerializer(serializers.ModelSerializer):
 # BLOG MEDIA SERIALIZER
 # ====================================
 class BlogMediaSerializer(serializers.ModelSerializer):
+     
     class Meta:
         model = BlogMedia
         fields = ['id', 'file', 'uploaded_at']
@@ -365,7 +366,7 @@ class BookmarkSerializer(serializers.ModelSerializer):
 class BlogSerializer(TaggitSerializer, serializers.ModelSerializer):
     author = CustomUserSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
-    tags = TagListSerializerField()
+    tags = TagListSerializerField(required=False)
     media = BlogMediaSerializer(many=True, read_only=True)
     comments = CommentSerializer(many=True, read_only=True)
     reactions = serializers.PrimaryKeyRelatedField(many=True, read_only=True)

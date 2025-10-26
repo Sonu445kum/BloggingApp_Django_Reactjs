@@ -18,6 +18,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from .permissions import IsAdmin, IsAdminOrOwner
 from django.contrib.auth.tokens import default_token_generator
+from django.db.models import Q
 
 
 # -------------------------
@@ -494,6 +495,40 @@ def blog_update_view(request, pk):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_blog_admin(request, pk):
+    try:
+        blog = Blog.objects.get(pk=pk)
+    except Blog.DoesNotExist:
+        return Response({"error": "Blog not found"}, status=404)
+
+    # Author or admin/superuser override
+    if blog.author != request.user and not (request.user.is_staff or request.user.is_superuser):
+     return Response({"error": "You cannot edit someone else's blog"}, status=403)
+
+    serializer = BlogSerializer(blog, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=400)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_blog_admin(request, pk):
+    try:
+        blog = Blog.objects.get(pk=pk)
+    except Blog.DoesNotExist:
+        return Response({"error": "Blog not found"}, status=404)
+
+    # Author or admin/superuser override
+    if blog.author != request.user and not (request.user.is_staff or request.user.is_superuser):
+        return Response({"error": "You cannot delete someone else's blog"}, status=403)
+
+    blog.delete()
+    return Response({"message": "Blog deleted successfully"})
+
 # -------------------------------
 # DELETE BLOG
 # -------------------------------
@@ -600,28 +635,43 @@ def trending_blogs_view(request):
 def blog_media_upload_view(request):
     """
     Upload media (images/videos) to a specific blog. Only author can upload.
+    Robust version: handles missing blog_id, invalid files, and DB errors.
     """
-    blog_id = request.data.get('blog_id')
-    files = request.FILES.getlist('file')  # match frontend FormData key
+    try:
+        blog_id = request.data.get('blog_id')
+        files = request.FILES.getlist('file')  # match frontend FormData key
 
-    if not blog_id or not files:
-        return Response({"error": "blog_id and file(s) are required"}, status=status.HTTP_400_BAD_REQUEST)
+        if not blog_id:
+            return Response({"error": "blog_id is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-    blog = get_object_or_404(Blog, pk=blog_id)
+        if not files:
+            return Response({"error": "No file(s) uploaded"}, status=status.HTTP_400_BAD_REQUEST)
 
-    if blog.author != request.user:
-        return Response({"error": "You are not allowed to upload media to this blog"}, status=status.HTTP_403_FORBIDDEN)
+        blog = get_object_or_404(Blog, pk=blog_id)
 
-    uploaded_media = []
-    for f in files:
-        media = BlogMedia.objects.create(blog=blog, file=f)
-        uploaded_media.append({"id": media.id, "file": media.file.url})
+        if blog.author != request.user:
+            return Response({"error": "You are not allowed to upload media to this blog"}, status=status.HTTP_403_FORBIDDEN)
 
-    return Response({
-        "message": "Media uploaded successfully",
-        "media": uploaded_media
-    }, status=status.HTTP_201_CREATED)
+        uploaded_media = []
+        for f in files:
+            try:
+                media = BlogMedia.objects.create(blog=blog, file=f)
+                uploaded_media.append({"id": media.id, "file": media.file.url})
+            except Exception as e:
+                # Skip faulty file but continue with others
+                continue
 
+        if not uploaded_media:
+            return Response({"error": "Failed to upload any media"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({
+            "message": "Media uploaded successfully",
+            "media": uploaded_media
+        }, status=status.HTTP_201_CREATED)
+
+    except Exception as e:
+        # Catch any unexpected error
+        return Response({"error": "Internal server error", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # -----------------------------
 # List All Categories
