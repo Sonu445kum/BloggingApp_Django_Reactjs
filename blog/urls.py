@@ -71,10 +71,11 @@
 # ]
 
 
-# new urls.py 
+# new urls.py
 
 # urls.py
 from django.urls import path
+from django.urls import re_path
 from . import views
 
 urlpatterns = [
@@ -83,7 +84,8 @@ urlpatterns = [
     path('auth/login/', views.login_view, name='login'),
     path('auth/current-user/', views.current_user_view,  name='current-user'),
     path('auth/verify-email/', views.verify_email, name='verify-email'),
-    path('auth/request-password-reset/', views.request_password_reset, name='request-password-reset'),
+    path('auth/request-password-reset/',
+         views.request_password_reset, name='request-password-reset'),
     path('auth/reset-password/', views.reset_password, name='reset-password'),
     path('auth/change-password/', views.change_password, name='change-password'),
 
@@ -102,44 +104,61 @@ urlpatterns = [
     path('blogs/<int:pk>/update/', views.blog_update_view, name='blog-update'),
     path('blogs/<int:pk>/delete/', views.blog_delete_view, name='blog-delete'),
     path('blogs/drafts/', views.draft_blogs_view, name='draft-blogs'),
-    path('blogs/<int:pk>/add-to-blog/', views.add_to_blog_view, name='add-to-blog'),
+    path('blogs/<int:pk>/add-to-blog/',
+         views.add_to_blog_view, name='add-to-blog'),
 
     # Blog media upload
-    path('blogs/media/upload/', views.blog_media_upload_view, name='blog-media-upload'),
+    path('blogs/media/upload/', views.blog_media_upload_view,
+         name='blog-media-upload'),
 
     # ---------------- Categories
     path('categories/', views.category_list_view, name='category-list'),
     path('categories/create/', views.category_create_view, name='category-create'),
-    path('categories/<int:pk>/update-delete/', views.category_update_delete_view, name='category-update-delete'),
+    path('categories/<int:pk>/update-delete/',
+         views.category_update_delete_view, name='category-update-delete'),
 
     # ---------------- Comments
-    path('blogs/<int:blog_id>/comments/', views.comment_list_view, name='comment-list'),
-    path('blogs/<int:blog_id>/comments/add/', views.add_comment, name='add-comment'),
-    path('comments/<int:pk>/delete/', views.comment_delete_view, name='comment-delete'),
+    path('blogs/<int:blog_id>/comments/',
+         views.comment_list_view, name='comment-list'),
+    path('blogs/<int:blog_id>/comments/add/',
+         views.add_comment, name='add-comment'),
+    path('comments/<int:pk>/delete/',
+         views.comment_delete_view, name='comment-delete'),
 
     # ---------------- Reactions
-    path('blogs/<int:blog_id>/reactions/toggle/', views.toggle_reaction, name='toggle-reaction'),
-    path('blogs/<int:blog_id>/reactions/', views.reaction_list_view, name='reaction-list'),
+    path('blogs/<int:blog_id>/reactions/toggle/',
+         views.toggle_reaction, name='toggle-reaction'),
+    path('blogs/<int:blog_id>/reactions/',
+         views.reaction_list_view, name='reaction-list'),
 
     # ---------------- Bookmarks
-    path('blogs/<int:blog_id>/bookmark/', views.toggle_bookmark, name='toggle-bookmark'),
+    path('blogs/<int:blog_id>/bookmark/',
+         views.toggle_bookmark, name='toggle-bookmark'),
     path('user/bookmarks/', views.user_bookmarks, name='user-bookmarks'),
 
     # ---------------- Notifications
-    path('user/notifications/', views.user_notifications_view, name='user-notifications'),
-    path('notifications/<int:pk>/mark-read/', views.mark_notification_read_view, name='notification-mark-read'),
-    path('notifications/mark-all-read/', views.mark_all_notifications_read_view, name='notification-mark-all-read'),
-    path('notifications/<int:pk>/delete/', views.delete_notification_view, name='notification-delete'),
+    path('user/notifications/', views.user_notifications_view,
+         name='user-notifications'),
+    path('notifications/<int:pk>/mark-read/',
+         views.mark_notification_read_view, name='notification-mark-read'),
+    path('notifications/mark-all-read/', views.mark_all_notifications_read_view,
+         name='notification-mark-all-read'),
+    path('notifications/<int:pk>/delete/',
+         views.delete_notification_view, name='notification-delete'),
 
     # ---------------- Admin Dashboard
     path('admin/dashboard/', views.admin_dashboard, name='admin-dashboard'),
     path('admin/users/', views.all_users, name='all-users'),
-    path('admin/users/<int:user_id>/update-role/', views.update_user_role, name='update-user-role'),
-    path('admin/most-active-users/', views.most_active_users, name='most-active-users'),
-    path('admin/trending-blogs/', views.trending_blogs_admin, name='trending-blogs-admin'),
+    path('admin/users/<int:user_id>/update-role/',
+         views.update_user_role, name='update-user-role'),
+    path('admin/most-active-users/',
+         views.most_active_users, name='most-active-users'),
+    path('admin/trending-blogs/', views.trending_blogs_admin,
+         name='trending-blogs-admin'),
 
     # ---------------- Blog Approval / Flag
-    path('blogs/<int:blog_id>/approve/', views.approve_blog, name='approve-blog'),
+    path('blogs/<int:blog_id>/approve/',
+         views.approve_blog, name='approve-blog'),
     path('blogs/<int:blog_id>/flag/', views.flag_blog, name='flag-blog'),
 
     # ---------------- Stats
@@ -150,4 +169,20 @@ urlpatterns = [
 
     # ---------------- Top Blogs
     path('blogs/top/', views.top_blogs_api, name='top-blogs'),
+
+    # ---------------- Admin Comments Management
+    path('admin/comments/', views.get_all_comments_view, name='admin-comments'),
+    path('admin/comments/<int:pk>/approve/',
+         views.approve_comment_view, name='approve-comment'),
+    #  Delete comment (admin or comment owner)
+    path('comments/<int:pk>/delete/',
+         views.comment_delete_view, name='delete_comment'),
+
+
+
+    #  Notifications
+    # List all notifications
+    path('admin/notifications/', views.get_admin_notifications, name='get_admin_notifications'),
+    path('admin/notifications/<int:pk>/mark-read/', views.mark_notification_read, name='mark_notification_read'),
+    path('admin/notifications/<int:pk>/', views.delete_notification, name='delete_notification'),
 ]

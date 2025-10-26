@@ -23,6 +23,7 @@ urlpatterns = [
     # Blog app APIs
     # -----------------------
     path('api/', include('blog.urls')),  # Include all blog app endpoints under /api/
+    path('api/admin/', include('blog.urls')),
 
     # JWT auth (if you want token endpoints separate)
     path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),

@@ -186,3 +186,4 @@ PASSWORD_RESET_TIMEOUT = 60 * 60 * 24 * 3  # 3 days
 
 # Optional: if you want to allow all origins in dev
 # CORS_ALLOW_ALL_ORIGINS = True
+APPEND_SLASH = True
