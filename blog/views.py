@@ -1033,3 +1033,36 @@ def delete_notification(request, pk):
         return Response({"message": "Notification deleted successfully"})
     except Notification.DoesNotExist:
         return Response({"error": "Notification not found"}, status=status.HTTP_404_NOT_FOUND)
+    
+
+# ------------------------------
+# List All Reactions (Admin)
+# ------------------------------
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def reactions_list(request):
+    """
+    GET /api/admin/reactions/
+    Returns a list of all reactions for the admin dashboard.
+    """
+    reactions = Reaction.objects.select_related('user', 'blog').all()
+    serializer = ReactionSerializer(reactions, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# ------------------------------
+# Delete a Reaction (Admin)
+# ------------------------------
+@api_view(['DELETE'])
+@permission_classes([IsAdminUser])
+def reaction_delete(request, pk):
+    """
+    DELETE /api/admin/reactions/<pk>/delete/
+    Deletes a reaction by its ID (pk).
+    """
+    try:
+        reaction = Reaction.objects.get(pk=pk)
+        reaction.delete()
+        return Response({"detail": "Reaction deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
+    except Reaction.DoesNotExist:
+        return Response({"detail": "Reaction not found"}, status=status.HTTP_404_NOT_FOUND)

@@ -185,4 +185,12 @@ urlpatterns = [
     path('admin/notifications/', views.get_admin_notifications, name='get_admin_notifications'),
     path('admin/notifications/<int:pk>/mark-read/', views.mark_notification_read, name='mark_notification_read'),
     path('admin/notifications/<int:pk>/', views.delete_notification, name='delete_notification'),
+
+
+    # Reactions
+    # List all reactions
+    path('api/admin/reactions/', views.reactions_list, name='admin-reactions'),
+
+    # Delete a reaction by ID
+    path('api/admin/reactions/<int:pk>/delete/', views.reaction_delete, name='delete-reaction'),
 ]
