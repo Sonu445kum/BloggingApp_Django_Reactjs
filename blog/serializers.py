@@ -256,23 +256,55 @@ class RegisterSerializer(serializers.ModelSerializer):
 # ====================================
 # LOGIN SERIALIZER
 # ====================================
+# class LoginSerializer(serializers.Serializer):
+#     username = serializers.CharField()
+#     password = serializers.CharField(write_only=True)
+
+#     def validate(self, attrs):
+#         username = attrs.get("username")
+#         password = attrs.get("password")
+
+#         if username and password:
+#             user = authenticate(username=username, password=password)
+#             if not user:
+#                 raise serializers.ValidationError("Invalid credentials.")
+#             if not user.is_active:
+#                 raise serializers.ValidationError("Please verify your email before logging in.")
+#             attrs['user'] = user
+#             return attrs
+#         raise serializers.ValidationError("Both username and password are required.")
+
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField(write_only=True)
 
     def validate(self, attrs):
-        username = attrs.get("username")
+        username_or_email = attrs.get("username")
         password = attrs.get("password")
 
-        if username and password:
-            user = authenticate(username=username, password=password)
-            if not user:
-                raise serializers.ValidationError("Invalid credentials.")
-            if not user.is_active:
-                raise serializers.ValidationError("Please verify your email before logging in.")
-            attrs['user'] = user
-            return attrs
-        raise serializers.ValidationError("Both username and password are required.")
+        if not username_or_email or not password:
+            raise serializers.ValidationError("Both username/email and password are required.")
+
+        # Try authenticating with username first
+        user = authenticate(username=username_or_email, password=password)
+
+        # If not authenticated, try using email
+        if user is None:
+            try:
+                user_obj = CustomUser.objects.get(email=username_or_email)
+                user = authenticate(username=user_obj.username, password=password)
+            except CustomUser.DoesNotExist:
+                raise serializers.ValidationError("Invalid username/email or password.")
+
+        if not user:
+            raise serializers.ValidationError("Invalid username/email or password.")
+
+        if not user.is_active:
+            raise serializers.ValidationError("Please verify your email before logging in.")
+
+        attrs['user'] = user
+        return attrs
+
 
 
 # ====================================

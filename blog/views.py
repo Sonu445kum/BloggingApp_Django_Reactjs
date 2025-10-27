@@ -15,7 +15,7 @@ from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status,permissions
 from .permissions import IsAdmin, IsAdminOrOwner
 from django.contrib.auth.tokens import default_token_generator
 from django.db.models import Q
@@ -37,6 +37,7 @@ from channels.layers import get_channel_layer
 # -------------------------
 from taggit.models import Tag
 from webpush import send_user_notification
+from .pagination import BlogPagination
 
 # -------------------------
 # Models & Serializers
@@ -301,13 +302,17 @@ def send_activation_email(user, request=None):
 
 # --------------------- LOGIN ---------------------
 @api_view(['POST'])
-@permission_classes([AllowAny])  # <-- important
+@permission_classes([AllowAny])
 def login_view(request):
+    """
+    Allows login using either username or email along with password.
+    Returns JWT tokens and user data if successful.
+    """
     serializer = LoginSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     user = serializer.validated_data['user']
 
-    # JWT Tokens
+    # Generate JWT tokens
     refresh = RefreshToken.for_user(user)
     access_token = str(refresh.access_token)
 
@@ -318,7 +323,7 @@ def login_view(request):
             "username": user.username,
             "email": user.email,
             "is_active": user.is_active,
-            "is_admin": True if getattr(user, 'role', '').lower() == 'admin' else False,
+            "is_admin": getattr(user, 'is_staff', False) or getattr(user, 'is_superuser', False),
         },
         "tokens": {
             "refresh": str(refresh),
@@ -550,22 +555,18 @@ def blog_delete_view(request, pk):
 # -------------------------------
 # BLOG LIST (FILTERS + SEARCH)
 # -------------------------------
-@api_view(['GET'])
-@permission_classes([AllowAny])
+@api_view(["GET"])
+@permission_classes([permissions.AllowAny])
 def blog_list_view(request):
-    """
-    List all published blogs. Supports search, category, tag, and author filters.
-    """
-    search = request.query_params.get('search', '')
-    category = request.query_params.get('category', '')
-    tag = request.query_params.get('tag', '')
-    author = request.query_params.get('author', '')
+    search = request.query_params.get("search", "")
+    category = request.query_params.get("category", "")
+    tag = request.query_params.get("tag", "")
+    author = request.query_params.get("author", "")
 
-    blogs = Blog.objects.filter(status='published')
+    blogs = Blog.objects.filter(status="published")
 
     if search:
-        blogs = blogs.filter(Q(title__icontains=search) |
-                             Q(content__icontains=search))
+        blogs = blogs.filter(Q(title__icontains=search) | Q(content__icontains=search))
     if category:
         blogs = blogs.filter(category__name__iexact=category)
     if tag:
@@ -573,9 +574,12 @@ def blog_list_view(request):
     if author:
         blogs = blogs.filter(author__username__iexact=author)
 
-    blogs = blogs.order_by('-published_at')
-    serializer = BlogSerializer(blogs, many=True, context={'request': request})
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    blogs = blogs.order_by("-published_at")
+
+    paginator = BlogPagination()
+    paginated_blogs = paginator.paginate_queryset(blogs, request)
+    serializer = BlogSerializer(paginated_blogs, many=True, context={"request": request})
+    return paginator.get_paginated_response(serializer.data)
 
 
 # -------------------------------
@@ -1185,3 +1189,8 @@ def add_user(request):
         serializer.save()
         return Response(serializer.data, status=201)
     return Response(serializer.errors, status=400)
+
+
+
+
+# paginations views
