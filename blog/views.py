@@ -558,29 +558,55 @@ def blog_delete_view(request, pk):
 @api_view(["GET"])
 @permission_classes([permissions.AllowAny])
 def blog_list_view(request):
-    search = request.query_params.get("search", "")
-    category = request.query_params.get("category", "")
-    tag = request.query_params.get("tag", "")
-    author = request.query_params.get("author", "")
+    """
+    ✅ Blog List API with Full Filters + Pagination Support
+    Supports: search, category (name or slug), tag, author
+    """
 
-    blogs = Blog.objects.filter(status="published")
+    # --- Get query params ---
+    search = request.query_params.get("search", "").strip()
+    category_param = request.query_params.get("category", "").strip()
+    tag_param = request.query_params.get("tag", "").strip()
+    author_param = request.query_params.get("author", "").strip()
 
+    # --- Base queryset (only published blogs) ---
+    blogs = Blog.objects.filter(status="published").select_related("category", "author").prefetch_related("tags").order_by("-published_at")
+
+    # --- Search Filter ---
     if search:
-        blogs = blogs.filter(Q(title__icontains=search) | Q(content__icontains=search))
-    if category:
-        blogs = blogs.filter(category__name__iexact=category)
-    if tag:
-        blogs = blogs.filter(tags__name__iexact=tag)
-    if author:
-        blogs = blogs.filter(author__username__iexact=author)
+        blogs = blogs.filter(
+            Q(title__icontains=search) |
+            Q(content__icontains=search) |
+            Q(author__username__icontains=search)
+        )
 
-    blogs = blogs.order_by("-published_at")
+    # --- Category Filter (matches by name or slug, case-insensitive) ---
+    if category_param and category_param.lower() not in ["all", ""]:
+        blogs = blogs.filter(
+            Q(category__name__iexact=category_param) |
+            Q(category__slug__iexact=category_param)
+        )
 
+    # --- Tag Filter ---
+    if tag_param:
+        blogs = blogs.filter(tags__name__iexact=tag_param)
+
+    # --- Author Filter ---
+    if author_param:
+        blogs = blogs.filter(author__username__iexact=author_param)
+
+    # --- Remove Duplicates ---
+    blogs = blogs.distinct()
+
+    # --- Pagination ---
     paginator = BlogPagination()
     paginated_blogs = paginator.paginate_queryset(blogs, request)
-    serializer = BlogSerializer(paginated_blogs, many=True, context={"request": request})
-    return paginator.get_paginated_response(serializer.data)
 
+    # --- Serialization ---
+    serializer = BlogSerializer(paginated_blogs, many=True, context={"request": request})
+
+    # --- Return Paginated Response ---
+    return paginator.get_paginated_response(serializer.data)
 
 # -------------------------------
 # BLOG DETAILS
@@ -679,14 +705,12 @@ def blog_media_upload_view(request):
 
 # -----------------------------
 # List All Categories
-# -----------------------------
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def category_list_view(request):
-    categories = Category.objects.all()
+    categories = Category.objects.all().order_by("name")
     serializer = CategorySerializer(categories, many=True)
     return Response({"categories": serializer.data}, status=status.HTTP_200_OK)
-
 
 # -----------------------------
 # Create New Category

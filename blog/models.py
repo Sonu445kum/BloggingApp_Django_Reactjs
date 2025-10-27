@@ -73,6 +73,7 @@ class Blog(models.Model):
     content = CKEditor5Field('Content', config_name='default')
     markdown_content = MarkdownxField(blank=True, null=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
+    # category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='blogs')
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='blogs')
     tags = TaggableManager(blank=True)
     featured_image = models.ImageField(upload_to='blogs/', blank=True, null=True)
