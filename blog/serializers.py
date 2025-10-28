@@ -400,13 +400,78 @@ class BookmarkSerializer(serializers.ModelSerializer):
         fields = ['id', 'user', 'blog', 'blog_title', 'created_at']
 
 
+# # ====================================
+# # BLOG SERIALIZER (UPDATED)
+# # ====================================
+# class BlogSerializer(TaggitSerializer, serializers.ModelSerializer):
+#     author = CustomUserSerializer(read_only=True)
+#     category = CategorySerializer(read_only=True)
+#     tags = TagListSerializerField(required=False)
+#     media = BlogMediaSerializer(many=True, read_only=True)
+#     comments = CommentSerializer(many=True, read_only=True)
+#     reactions = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+#     bookmarks = BookmarkSerializer(many=True, read_only=True)
+
+#     total_reactions = serializers.SerializerMethodField()
+#     total_comments = serializers.SerializerMethodField()
+#     total_bookmarks = serializers.SerializerMethodField()
+#     is_featured_display = serializers.SerializerMethodField()
+
+#     class Meta:
+#         model = Blog
+#         fields = [
+#             'id', 'author', 'title', 'content', 'markdown_content', 'category',
+#             'tags', 'featured_image', 'attachments', 'status',
+#             'views', 'likes', 'comments_count', 'is_featured', 'is_featured_display',
+#             'publish_at', 'published_at', 'created_at', 'updated_at',
+#             'media', 'comments', 'reactions', 'bookmarks',
+#             'total_reactions', 'total_comments', 'total_bookmarks'
+#         ]
+
+#     # ✅ Add absolute URLs for featured_image & attachments
+#     def to_representation(self, instance):
+#         data = super().to_representation(instance)
+#         request = self.context.get('request')
+
+#         if request:
+#             # ✅ Convert featured_image to absolute URL if available
+#             if instance.featured_image:
+#                 try:
+#                     data['featured_image'] = request.build_absolute_uri(instance.featured_image.url)
+#                 except Exception:
+#                     data['featured_image'] = None
+
+#             # ✅ Convert attachments to absolute URL (if exists)
+#             if instance.attachments:
+#                 try:
+#                     data['attachments'] = request.build_absolute_uri(instance.attachments.url)
+#                 except Exception:
+#                     data['attachments'] = None
+
+#         return data
+
+#     # ✅ Helper Methods
+#     def get_total_reactions(self, obj):
+#         return obj.reactions.count()
+
+#     def get_total_comments(self, obj):
+#         return obj.comments.count()
+
+#     def get_total_bookmarks(self, obj):
+#         return obj.bookmarked_by.count() if hasattr(obj, 'bookmarked_by') else 0
+
+#     def get_is_featured_display(self, obj):
+#         return "⭐ Featured" if obj.is_featured else "Normal"
+
+
 # ====================================
-# BLOG SERIALIZER (UPDATED)
+# BLOG SERIALIZER (FINAL UPDATED ✅)
 # ====================================
 class BlogSerializer(TaggitSerializer, serializers.ModelSerializer):
     author = CustomUserSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
     tags = TagListSerializerField(required=False)
+
     media = BlogMediaSerializer(many=True, read_only=True)
     comments = CommentSerializer(many=True, read_only=True)
     reactions = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
@@ -417,6 +482,10 @@ class BlogSerializer(TaggitSerializer, serializers.ModelSerializer):
     total_bookmarks = serializers.SerializerMethodField()
     is_featured_display = serializers.SerializerMethodField()
 
+    # ✅ New fields for emoji reactions
+    reaction_summary = serializers.SerializerMethodField()
+    user_reaction = serializers.SerializerMethodField()
+
     class Meta:
         model = Blog
         fields = [
@@ -425,23 +494,25 @@ class BlogSerializer(TaggitSerializer, serializers.ModelSerializer):
             'views', 'likes', 'comments_count', 'is_featured', 'is_featured_display',
             'publish_at', 'published_at', 'created_at', 'updated_at',
             'media', 'comments', 'reactions', 'bookmarks',
-            'total_reactions', 'total_comments', 'total_bookmarks'
+            'total_reactions', 'total_comments', 'total_bookmarks',
+            # 👇 newly added fields
+            'reaction_summary', 'user_reaction',
         ]
 
-    # ✅ Add absolute URLs for featured_image & attachments
+    # ✅ Convert media paths to absolute URLs
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
 
         if request:
-            # ✅ Convert featured_image to absolute URL if available
+            # ✅ Convert featured_image to absolute URL
             if instance.featured_image:
                 try:
                     data['featured_image'] = request.build_absolute_uri(instance.featured_image.url)
                 except Exception:
                     data['featured_image'] = None
 
-            # ✅ Convert attachments to absolute URL (if exists)
+            # ✅ Convert attachments to absolute URL
             if instance.attachments:
                 try:
                     data['attachments'] = request.build_absolute_uri(instance.attachments.url)
@@ -462,6 +533,22 @@ class BlogSerializer(TaggitSerializer, serializers.ModelSerializer):
 
     def get_is_featured_display(self, obj):
         return "⭐ Featured" if obj.is_featured else "Normal"
+
+    # ✅ Get summarized emoji reaction counts
+    def get_reaction_summary(self, obj):
+        summary = {'like': 0, 'love': 0, 'laugh': 0, 'angry': 0}
+        for r in obj.reactions.all():
+            summary[r.reaction_type] = summary.get(r.reaction_type, 0) + 1
+        return summary
+
+    # ✅ Get current user's reaction type (if any)
+    def get_user_reaction(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            reaction = obj.reactions.filter(user=request.user).first()
+            return reaction.reaction_type if reaction else None
+        return None
+
 
 
 

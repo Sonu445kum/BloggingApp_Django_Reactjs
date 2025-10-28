@@ -821,32 +821,41 @@ def category_update_delete_view(request, pk):
 # REACTIONS
 # -----------------------------
 
-# views.py
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def toggle_reaction_view(request, blog_id):
     """
     Toggle reaction types (like, love, laugh, angry)
+    - Ek user ek hi reaction de sakta hai ek blog pe.
+    - Same reaction dobara click kare → reaction remove ho jaye.
+    - Alag reaction click kare → purana replace ho jaye.
     """
     try:
-        reaction_type = request.data.get('reactionType')
+        # ✅ Accept both 'reaction_type' and 'reactionType' (for safety)
+        reaction_type = request.data.get('reaction_type') or request.data.get('reactionType')
 
+        # 🛑 Validate Reaction Type
         if reaction_type not in ['like', 'love', 'laugh', 'angry']:
-            return Response({"error": "Invalid reaction type"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Invalid reaction type"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
+        # 🔍 Find blog and user reaction
         blog = get_object_or_404(Blog, pk=blog_id)
         reaction, created = Reaction.objects.get_or_create(blog=blog, user=request.user)
 
-        # 🟢 Toggle logic
+        # ⚡ Toggle logic (like Instagram/Facebook)
         if not created and reaction.reaction_type == reaction_type:
-            # Remove reaction if same type is clicked again
+            # ✅ Same reaction click again → remove
             reaction.delete()
         else:
-            # Update or create with new type
+            # ✅ Different reaction → update / create new
             reaction.reaction_type = reaction_type
             reaction.save()
 
-        # 🟣 Return full updated summary
+        # 🟣 Reaction Summary (Counts)
         summary = {
             "like": Reaction.objects.filter(blog=blog, reaction_type="like").count(),
             "love": Reaction.objects.filter(blog=blog, reaction_type="love").count(),
@@ -854,6 +863,7 @@ def toggle_reaction_view(request, blog_id):
             "angry": Reaction.objects.filter(blog=blog, reaction_type="angry").count(),
         }
 
+        # 🧠 Current user’s reaction (for UI highlight)
         user_reaction = (
             Reaction.objects.filter(blog=blog, user=request.user)
             .values_list("reaction_type", flat=True)
@@ -864,10 +874,15 @@ def toggle_reaction_view(request, blog_id):
             "message": "Reaction updated successfully",
             "reaction_summary": summary,
             "user_reaction": user_reaction,
-        })
+        }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        print("❌ Reaction Error:", str(e))
+        return Response(
+            {"error": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
 
 
 # Reactions List

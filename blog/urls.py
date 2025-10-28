@@ -136,6 +136,7 @@ urlpatterns = [
     # ---------------- Reactions
     path('blogs/<int:blog_id>/reactions/toggle/',
          views.toggle_reaction_view, name='toggle-reaction'),
+    
     path('blogs/<int:blog_id>/reactions/',
          views.reaction_list_view, name='reaction-list'),
 
