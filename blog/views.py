@@ -7,7 +7,7 @@ from django.utils import timezone
 from django.core.mail import send_mail
 from django.conf import settings
 from django.urls import reverse
-from django.db.models import Count
+from django.db.models import Count, Sum
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
@@ -627,6 +627,58 @@ def blog_detail_view(request, pk):
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+# myblogs list views
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def my_blogs_list_view(request):
+    """
+     Returns all blogs created by the logged-in user (published or drafts).
+    """
+    user = request.user
+    blogs = Blog.objects.filter(author=user).order_by("-created_at")
+
+    serializer = BlogSerializer(blogs, many=True, context={"request": request})
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+# myBlogs update views
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated])
+def myblogs_update_blog_view(request, pk):
+    """
+     Update a blog created by the logged-in user.
+    """
+    try:
+        blog = Blog.objects.get(pk=pk, author=request.user)
+    except Blog.DoesNotExist:
+        return Response({"detail": "Blog not found or unauthorized."}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = BlogSerializer(blog, data=request.data, partial=True, context={"request": request})
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+# myBlogs Deleted 
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def myblogs_delete_blog_view(request, pk):
+    """
+     Delete a blog created by the logged-in user.
+    """
+    try:
+        blog = Blog.objects.get(pk=pk, author=request.user)
+    except Blog.DoesNotExist:
+        return Response({"detail": "Blog not found or unauthorized."}, status=status.HTTP_404_NOT_FOUND)
+
+    blog.delete()
+    return Response({"message": "Blog deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+
+
+
 # -------------------------------
 # DRAFT BLOGS (USER SPECIFIC)
 # -------------------------------
@@ -665,11 +717,11 @@ def trending_blogs_view(request):
 def blog_media_upload_view(request):
     """
     Upload media (images/videos) to a specific blog. Only author can upload.
-    Robust version: handles missing blog_id, invalid files, and DB errors.
     """
     try:
-        blog_id = request.data.get('blog_id')
-        files = request.FILES.getlist('file')  # match frontend FormData key
+        # ✅ Accept both keys
+        blog_id = request.data.get('blog') or request.data.get('blog_id')
+        files = request.FILES.getlist('file')
 
         if not blog_id:
             return Response({"error": "blog_id is required"}, status=status.HTTP_400_BAD_REQUEST)
@@ -686,9 +738,12 @@ def blog_media_upload_view(request):
         for f in files:
             try:
                 media = BlogMedia.objects.create(blog=blog, file=f)
-                uploaded_media.append({"id": media.id, "file": media.file.url})
+                uploaded_media.append({
+                    "id": media.id,
+                    # ✅ Full URL return
+                    "file": request.build_absolute_uri(media.file.url)
+                })
             except Exception as e:
-                # Skip faulty file but continue with others
                 continue
 
         if not uploaded_media:
@@ -700,8 +755,8 @@ def blog_media_upload_view(request):
         }, status=status.HTTP_201_CREATED)
 
     except Exception as e:
-        # Catch any unexpected error
         return Response({"error": "Internal server error", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 # -----------------------------
 # List All Categories
@@ -766,34 +821,53 @@ def category_update_delete_view(request, pk):
 # REACTIONS
 # -----------------------------
 
-
+# views.py
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def toggle_reaction(request, blog_id):
-    user = request.user
-    reaction_type = request.data.get('reaction_type')
-    blog = get_object_or_404(Blog, id=blog_id)
-    valid_reactions = ['like', 'dislike', 'love', 'laugh', 'angry']
-    if reaction_type not in valid_reactions:
-        return Response({'error': 'Invalid reaction type'}, status=status.HTTP_400_BAD_REQUEST)
+def toggle_reaction_view(request, blog_id):
+    """
+    Toggle reaction types (like, love, laugh, angry)
+    """
+    try:
+        reaction_type = request.data.get('reactionType')
 
-    reaction, created = Reaction.objects.get_or_create(user=user, blog=blog)
+        if reaction_type not in ['like', 'love', 'laugh', 'angry']:
+            return Response({"error": "Invalid reaction type"}, status=status.HTTP_400_BAD_REQUEST)
 
-    if not created and reaction.reaction_type == reaction_type:
-        reaction.delete()
-        return Response({'message': 'Reaction removed'})
-    else:
-        reaction.reaction_type = reaction_type
-        reaction.save()
-        if blog.author.id != user.id:
-            Notification.objects.create(
-                user=blog.author,
-                sender=user,
-                notification_type='reaction',
-                blog=blog,
-                message=f"{user.username} reacted ({reaction_type}) to your blog '{blog.title}'"
-            )
-        return Response({'message': f'{reaction_type} added'})
+        blog = get_object_or_404(Blog, pk=blog_id)
+        reaction, created = Reaction.objects.get_or_create(blog=blog, user=request.user)
+
+        # 🟢 Toggle logic
+        if not created and reaction.reaction_type == reaction_type:
+            # Remove reaction if same type is clicked again
+            reaction.delete()
+        else:
+            # Update or create with new type
+            reaction.reaction_type = reaction_type
+            reaction.save()
+
+        # 🟣 Return full updated summary
+        summary = {
+            "like": Reaction.objects.filter(blog=blog, reaction_type="like").count(),
+            "love": Reaction.objects.filter(blog=blog, reaction_type="love").count(),
+            "laugh": Reaction.objects.filter(blog=blog, reaction_type="laugh").count(),
+            "angry": Reaction.objects.filter(blog=blog, reaction_type="angry").count(),
+        }
+
+        user_reaction = (
+            Reaction.objects.filter(blog=blog, user=request.user)
+            .values_list("reaction_type", flat=True)
+            .first()
+        )
+
+        return Response({
+            "message": "Reaction updated successfully",
+            "reaction_summary": summary,
+            "user_reaction": user_reaction,
+        })
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # Reactions List
@@ -964,9 +1038,9 @@ def stats_view(request):
     })
 
 
-# -----------------------------
-# ADMIN DASHBOARD
-# -----------------------------
+# # -----------------------------
+# # ADMIN DASHBOARD
+# # -----------------------------
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdmin])
 def admin_dashboard(request):
@@ -990,16 +1064,22 @@ def all_users(request):
 
 
 # Update User Role
-@api_view(['POST'])
+@api_view(['POST', 'PUT'])
 @permission_classes([IsAuthenticated, IsAdmin])
 def update_user_role(request, user_id):
     user = get_object_or_404(CustomUser, id=user_id)
     new_role = request.data.get('role')
-    if new_role not in ['Admin', 'Editor', 'Author', 'Reader']:
+
+    # Validate role
+    valid_roles = ['Admin', 'Editor', 'Author', 'Reader']
+    if new_role not in valid_roles:
         return Response({'error': 'Invalid role'}, status=400)
+
+    # Save updated role
     user.role = new_role
     user.save()
-    return Response({'status': 'Role updated successfully'})
+
+    return Response({'status': 'Role updated successfully', 'new_role': user.role})
 
 
 # Most active Users
@@ -1217,4 +1297,101 @@ def add_user(request):
 
 
 
+
+
 # paginations views
+from django.db.models.functions import TruncDate, TruncMonth
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def stats(request):
+    # ---------- Base counts ----------
+    total_blogs = Blog.objects.count()
+    total_likes = sum(blog.likes.count() for blog in Blog.objects.all())
+    total_comments = Comment.objects.count()
+    total_views = Blog.objects.aggregate(total=Sum('views'))['total'] or 0
+    total_categories = Category.objects.count()
+    total_users = User.objects.count()
+
+    # ---------- Blog per Category ----------
+    blogs_per_category = (
+        Blog.objects.values('category__name')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+
+    # ---------- Views per Category ----------
+    views_per_category = (
+        Blog.objects.values('category__name')
+        .annotate(total_views=Sum('views'))
+        .order_by('-total_views')
+    )
+
+    # ---------- Most Active Blogs (by reactions + comments + views) ----------
+    most_active_blogs = (
+        Blog.objects.annotate(
+            activity_score=Count('reactions') + Count('comments') + Sum('views')
+        )
+        .order_by('-activity_score')[:5]
+        .values('id', 'title', 'activity_score', 'views')
+    )
+
+    # ---------- Trending Blogs (by views only) ----------
+    trending_blogs = (
+        Blog.objects.order_by('-views')[:5]
+        .values('id', 'title', 'views', 'created_at')
+    )
+
+    # ---------- Daily / Monthly Trends ----------
+    daily_blogs = (
+        Blog.objects.annotate(date=TruncDate('created_at'))
+        .values('date')
+        .annotate(count=Count('id'))
+        .order_by('date')
+    )
+    monthly_blogs = (
+        Blog.objects.annotate(month=TruncMonth('created_at'))
+        .values('month')
+        .annotate(count=Count('id'))
+        .order_by('month')
+    )
+
+    daily_users = (
+        User.objects.annotate(date=TruncDate('date_joined'))
+        .values('date')
+        .annotate(count=Count('id'))
+        .order_by('date')
+    )
+    monthly_users = (
+        User.objects.annotate(month=TruncMonth('date_joined'))
+        .values('month')
+        .annotate(count=Count('id'))
+        .order_by('month')
+    )
+
+    return Response({
+        'total_blogs': total_blogs,
+        'total_users': total_users,
+        'total_views': total_views,
+        'total_likes': total_likes,
+        'total_comments': total_comments,
+        'total_categories': total_categories,
+
+        'blogs_per_category': blogs_per_category,
+        'views_per_category': views_per_category,
+        'most_active_blogs': most_active_blogs,
+        'trending_blogs': trending_blogs,
+
+        'daily_blogs': daily_blogs,
+        'monthly_blogs': monthly_blogs,
+        'daily_users': daily_users,
+        'monthly_users': monthly_users,
+    })
+
+
+
+
+
+
+
+
+

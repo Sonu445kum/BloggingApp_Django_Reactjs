@@ -355,10 +355,18 @@ class CategorySerializer(serializers.ModelSerializer):
 # BLOG MEDIA SERIALIZER
 # ====================================
 class BlogMediaSerializer(serializers.ModelSerializer):
-     
+    file = serializers.SerializerMethodField()
+
     class Meta:
         model = BlogMedia
         fields = ['id', 'file', 'uploaded_at']
+
+    def get_file(self, obj):
+        """Return absolute URL for image file"""
+        request = self.context.get('request')
+        if obj.file and hasattr(obj.file, 'url'):
+            return request.build_absolute_uri(obj.file.url) if request else obj.file.url
+        return None
 
 
 # ====================================
@@ -393,7 +401,7 @@ class BookmarkSerializer(serializers.ModelSerializer):
 
 
 # ====================================
-# BLOG SERIALIZER (Main)
+# BLOG SERIALIZER (UPDATED)
 # ====================================
 class BlogSerializer(TaggitSerializer, serializers.ModelSerializer):
     author = CustomUserSerializer(read_only=True)
@@ -420,6 +428,29 @@ class BlogSerializer(TaggitSerializer, serializers.ModelSerializer):
             'total_reactions', 'total_comments', 'total_bookmarks'
         ]
 
+    # ✅ Add absolute URLs for featured_image & attachments
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+
+        if request:
+            # ✅ Convert featured_image to absolute URL if available
+            if instance.featured_image:
+                try:
+                    data['featured_image'] = request.build_absolute_uri(instance.featured_image.url)
+                except Exception:
+                    data['featured_image'] = None
+
+            # ✅ Convert attachments to absolute URL (if exists)
+            if instance.attachments:
+                try:
+                    data['attachments'] = request.build_absolute_uri(instance.attachments.url)
+                except Exception:
+                    data['attachments'] = None
+
+        return data
+
+    # ✅ Helper Methods
     def get_total_reactions(self, obj):
         return obj.reactions.count()
 
@@ -431,6 +462,7 @@ class BlogSerializer(TaggitSerializer, serializers.ModelSerializer):
 
     def get_is_featured_display(self, obj):
         return "⭐ Featured" if obj.is_featured else "Normal"
+
 
 
 # ====================================

@@ -107,6 +107,14 @@ urlpatterns = [
     path('blogs/<int:pk>/add-to-blog/',
          views.add_to_blog_view, name='add-to-blog'),
 
+
+    # MyBlogs
+    path("blogs/myblogs/", views.my_blogs_list_view, name="myblogs-list"),
+    path("blogs/myblogs/<int:pk>/update/",
+         views.myblogs_update_blog_view, name="blog-update"),
+    path("blogs/myblogs/<int:pk>/delete/",
+         views.myblogs_delete_blog_view, name="blog-delete"),
+
     # Blog media upload
     path('blogs/media/upload/', views.blog_media_upload_view,
          name='blog-media-upload'),
@@ -127,7 +135,7 @@ urlpatterns = [
 
     # ---------------- Reactions
     path('blogs/<int:blog_id>/reactions/toggle/',
-         views.toggle_reaction, name='toggle-reaction'),
+         views.toggle_reaction_view, name='toggle-reaction'),
     path('blogs/<int:blog_id>/reactions/',
          views.reaction_list_view, name='reaction-list'),
 
@@ -149,7 +157,7 @@ urlpatterns = [
     # ---------------- Admin Dashboard
     path('admin/dashboard/', views.admin_dashboard, name='admin-dashboard'),
     path('admin/users/', views.all_users, name='all-users'),
-    path('admin/users/<int:user_id>/update-role/',
+    path('admin/users/<int:user_id>/update-user-role/',
          views.update_user_role, name='update-user-role'),
     path('admin/most-active-users/',
          views.most_active_users, name='most-active-users'),
@@ -182,9 +190,12 @@ urlpatterns = [
 
     #  Notifications
     # List all notifications
-    path('admin/notifications/', views.get_admin_notifications, name='get_admin_notifications'),
-    path('admin/notifications/<int:pk>/mark-read/', views.mark_notification_read, name='mark_notification_read'),
-    path('admin/notifications/<int:pk>/', views.delete_notification, name='delete_notification'),
+    path('admin/notifications/', views.get_admin_notifications,
+         name='get_admin_notifications'),
+    path('admin/notifications/<int:pk>/mark-read/',
+         views.mark_notification_read, name='mark_notification_read'),
+    path('admin/notifications/<int:pk>/',
+         views.delete_notification, name='delete_notification'),
 
 
     # Reactions
@@ -192,24 +203,31 @@ urlpatterns = [
     path('api/admin/reactions/', views.reactions_list, name='admin-reactions'),
 
     # Delete a reaction by ID
-    path('api/admin/reactions/<int:pk>/delete/', views.reaction_delete, name='delete-reaction'),
+    path('api/admin/reactions/<int:pk>/delete/',
+         views.reaction_delete, name='delete-reaction'),
 
     # Dashboard stats endpoint (admin only)
-    path('api/admin/dashboard-stats/', views.dashboard_stats, name='dashboard-stats'),
+    path('api/admin/dashboard-stats/',
+         views.dashboard_stats, name='dashboard-stats'),
 
     # Delete User
     path("api/users/<int:pk>/delete/", views.delete_user, name="delete_user"),
     path("users/<int:pk>/delete/", views.delete_user, name="delete_user"),
-   
+    path('users/<int:user_id>/update-role/', views.update_user_role, name='update_user_role'),
+
     path('users/<int:pk>/update/', views.update_user, name='update-user'),
 
     # Add new user by admin
-     path("users/add/", views.add_user, name="add-user"),
+    path("users/add/", views.add_user, name="add-user"),
 
-     path('admin/blogs/<int:pk>/update/', views.update_blog_admin, name='update_blog'),
-     path('admin/blogs/<int:pk>/delete/', views.delete_blog_admin, name='delete_blog'),
+    path('admin/blogs/<int:pk>/update/',
+         views.update_blog_admin, name='update_blog'),
+    path('admin/blogs/<int:pk>/delete/',
+         views.delete_blog_admin, name='delete_blog'),
 
 
-     # Paginations
-     
+    # stats
+    path("stats/", views.stats, name="stats"),
+
+
 ]
