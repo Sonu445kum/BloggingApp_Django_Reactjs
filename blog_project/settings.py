@@ -3,6 +3,8 @@ import os
 from datetime import timedelta
 from decouple import config
 from corsheaders.defaults import default_headers  # for CORS headers
+from decouple import config
+
 
 # Base dir
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,8 +22,6 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-
-    # Third-party
     'rest_framework',
     'corsheaders',
     'channels',
@@ -38,9 +38,8 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.facebook',
     'allauth.socialaccount.providers.github',
     'django_ckeditor_5',
-
-    # Local apps
     'blog',
+
 ]
 
 SITE_ID = 1
@@ -56,8 +55,11 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'blog.middleware.UserActivityMiddleware',
+    'blog.middleware.UserActivityMiddleware',  # ✅ Add this line
 ]
+
+
+
 
 # URLs
 ROOT_URLCONF = 'blog_project.urls'
@@ -78,16 +80,32 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'blog_project.wsgi.application'
+ASGI_APPLICATION = "blog_project.asgi.application"
+FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5173")
+# Optional
+SITE_URL = FRONTEND_URL
 
-# Channels
+
+# # Channels (WebSocket Layer Config)
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+            "hosts": [
+                (config("REDIS_HOST", default="127.0.0.1"), config("REDIS_PORT", cast=int, default=6379))
+            ],
         },
     },
 }
+
+# CHANNEL_LAYERS = {
+#     "default": {
+#         "BACKEND": "channels_redis.core.RedisChannelLayer",
+#         "CONFIG": {
+#             "hosts": [("127.0.0.1", 6379)],
+#         },
+#     },
+# }
 
 # Database
 DATABASES = {
@@ -179,7 +197,7 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_CREDENTIALS = True
 
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
 
 # Allow Authorization header (JWT)
 CORS_ALLOW_HEADERS = list(default_headers) + [

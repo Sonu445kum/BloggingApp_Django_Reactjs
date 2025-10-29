@@ -165,6 +165,9 @@ urlpatterns = [
     path('admin/trending-blogs/', views.trending_blogs_admin,
          name='trending-blogs-admin'),
 
+
+     path("admin/blogs/", views.admin_blog_list_view, name="admin-blog-list"),
+
     # ---------------- Blog Approval / Flag
     path('blogs/<int:blog_id>/approve/',
          views.approve_blog, name='approve-blog'),

@@ -1,29 +1,22 @@
-"""
-ASGI config for blog_project project.
-
-It exposes the ASGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/5.2/howto/deployment/asgi/
-"""
-
 import os
+import django
 from channels.routing import ProtocolTypeRouter, URLRouter
-from channels.auth import AuthMiddlewareStack
 from django.core.asgi import get_asgi_application
-import blog.routing  # Make sure you create this file for websocket URLs
+from channels.auth import AuthMiddlewareStack
+from channels.security.websocket import AllowedHostsOriginValidator
+from blog.routing import websocket_urlpatterns  # 👈 import your websocket routes
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'blog_project.settings')
 
-# Django ASGI application for HTTP requests
-django_asgi_app = get_asgi_application()
+# Django setup must happen before importing anything using ORM
+django.setup()
 
-# Main ASGI application with WebSocket support
+# ✅ ASGI application definition
 application = ProtocolTypeRouter({
-    "http": django_asgi_app,
-    "websocket": AuthMiddlewareStack(
-        URLRouter(
-            blog.routing.websocket_urlpatterns
+    "http": get_asgi_application(),
+    "websocket": AllowedHostsOriginValidator(   #  prevents cross-origin issues
+        AuthMiddlewareStack(
+            URLRouter(websocket_urlpatterns)
         )
     ),
 })

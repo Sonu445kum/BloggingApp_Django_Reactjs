@@ -19,6 +19,9 @@ from rest_framework import status,permissions
 from .permissions import IsAdmin, IsAdminOrOwner
 from django.contrib.auth.tokens import default_token_generator
 from django.db.models import Q
+# import here channel-layer for the web-socket
+
+
 
 
 # -------------------------
@@ -31,6 +34,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 # -------------------------
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+
+# trnasactions from the db
+from django.db import transaction
 
 # -------------------------
 # Tags & Notifications
@@ -822,54 +828,112 @@ def category_update_delete_view(request, pk):
 # -----------------------------
 
 
+# @api_view(['POST'])
+# @permission_classes([IsAuthenticated])
+# def toggle_reaction_view(request, blog_id):
+#     """
+#     Toggle reaction types (like, love, laugh, angry)
+#     - Ek user ek hi reaction de sakta hai ek blog pe.
+#     - Same reaction dobara click kare → reaction remove ho jaye.
+#     - Alag reaction click kare → purana replace ho jaye.
+#     """
+#     try:
+#         # ✅ Accept both 'reaction_type' and 'reactionType' (for safety)
+#         reaction_type = request.data.get('reaction_type') or request.data.get('reactionType')
+
+#         # 🛑 Validate Reaction Type
+#         if reaction_type not in ['like', 'love', 'laugh', 'angry']:
+#             return Response(
+#                 {"error": "Invalid reaction type"},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+#         # 🔍 Find blog and user reaction
+#         blog = get_object_or_404(Blog, pk=blog_id)
+#         reaction, created = Reaction.objects.get_or_create(blog=blog, user=request.user)
+
+#         # ⚡ Toggle logic (like Instagram/Facebook)
+#         if not created and reaction.reaction_type == reaction_type:
+#             # ✅ Same reaction click again → remove
+#             reaction.delete()
+#         else:
+#             # ✅ Different reaction → update / create new
+#             reaction.reaction_type = reaction_type
+#             reaction.save()
+
+#         # 🟣 Reaction Summary (Counts)
+#         summary = {
+#             "like": Reaction.objects.filter(blog=blog, reaction_type="like").count(),
+#             "love": Reaction.objects.filter(blog=blog, reaction_type="love").count(),
+#             "laugh": Reaction.objects.filter(blog=blog, reaction_type="laugh").count(),
+#             "angry": Reaction.objects.filter(blog=blog, reaction_type="angry").count(),
+#         }
+
+#         # 🧠 Current user’s reaction (for UI highlight)
+#         user_reaction = (
+#             Reaction.objects.filter(blog=blog, user=request.user)
+#             .values_list("reaction_type", flat=True)
+#             .first()
+#         )
+
+#         return Response({
+#             "message": "Reaction updated successfully",
+#             "reaction_summary": summary,
+#             "user_reaction": user_reaction,
+#         }, status=status.HTTP_200_OK)
+
+#     except Exception as e:
+#         print("❌ Reaction Error:", str(e))
+#         return Response(
+#             {"error": str(e)},
+#             status=status.HTTP_500_INTERNAL_SERVER_ERROR
+#         )
+
+
+# new toggle_reactions_view with web-socket
+# -----------------------------
+# REACTIONS
+# -----------------------------
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def toggle_reaction_view(request, blog_id):
     """
-    Toggle reaction types (like, love, laugh, angry)
-    - Ek user ek hi reaction de sakta hai ek blog pe.
-    - Same reaction dobara click kare → reaction remove ho jaye.
-    - Alag reaction click kare → purana replace ho jaye.
+    Toggle reaction (like/love/laugh/angry)
+    Real-time update handled automatically via signals.
     """
     try:
-        # ✅ Accept both 'reaction_type' and 'reactionType' (for safety)
+        # 🟣 Step 1: Validate Input
         reaction_type = request.data.get('reaction_type') or request.data.get('reactionType')
-
-        # 🛑 Validate Reaction Type
         if reaction_type not in ['like', 'love', 'laugh', 'angry']:
-            return Response(
-                {"error": "Invalid reaction type"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "Invalid reaction type"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 🔍 Find blog and user reaction
+        # 🟣 Step 2: Get Blog + User
         blog = get_object_or_404(Blog, pk=blog_id)
-        reaction, created = Reaction.objects.get_or_create(blog=blog, user=request.user)
+        user = request.user
 
-        # ⚡ Toggle logic (like Instagram/Facebook)
+        # 🟣 Step 3: Create or Toggle Reaction
+        reaction, created = Reaction.objects.get_or_create(blog=blog, user=user)
+
         if not created and reaction.reaction_type == reaction_type:
-            # ✅ Same reaction click again → remove
+            # Same reaction → remove
             reaction.delete()
+            user_reaction = None
         else:
-            # ✅ Different reaction → update / create new
+            # Different or new reaction → update
             reaction.reaction_type = reaction_type
             reaction.save()
+            user_reaction = reaction_type
 
-        # 🟣 Reaction Summary (Counts)
+        # 🟣 Step 4: Reaction Summary (use blog.reactions instead of reaction_set)
         summary = {
-            "like": Reaction.objects.filter(blog=blog, reaction_type="like").count(),
-            "love": Reaction.objects.filter(blog=blog, reaction_type="love").count(),
-            "laugh": Reaction.objects.filter(blog=blog, reaction_type="laugh").count(),
-            "angry": Reaction.objects.filter(blog=blog, reaction_type="angry").count(),
+            "like": blog.reactions.filter(reaction_type="like").count(),
+            "love": blog.reactions.filter(reaction_type="love").count(),
+            "laugh": blog.reactions.filter(reaction_type="laugh").count(),
+            "angry": blog.reactions.filter(reaction_type="angry").count(),
         }
 
-        # 🧠 Current user’s reaction (for UI highlight)
-        user_reaction = (
-            Reaction.objects.filter(blog=blog, user=request.user)
-            .values_list("reaction_type", flat=True)
-            .first()
-        )
-
+        # ✅ Step 5: Return Response
         return Response({
             "message": "Reaction updated successfully",
             "reaction_summary": summary,
@@ -878,10 +942,7 @@ def toggle_reaction_view(request, blog_id):
 
     except Exception as e:
         print("❌ Reaction Error:", str(e))
-        return Response(
-            {"error": str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
@@ -908,41 +969,112 @@ def comment_list_view(request, blog_id):
     return Response(serializer.data)
 
 
+# @api_view(['POST'])
+# @permission_classes([IsAuthenticated])
+# def add_comment(request, blog_id):
+#     blog = get_object_or_404(Blog, id=blog_id)
+#     content = request.data.get('content')
+#     if not content:
+#         return Response({'error': 'Content is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+#     comment = Comment.objects.create(
+#         user=request.user, blog=blog, content=content)
+
+#     if blog.author != request.user:
+#         Notification.objects.create(
+#             user=blog.author,
+#             sender=request.user,
+#             notification_type='comment',
+#             blog=blog,
+#             message=f"{request.user.username} commented on your blog"
+#         )
+
+#         # Optional: real-time channels notification
+#         channel_layer = get_channel_layer()
+#         async_to_sync(channel_layer.group_send)(
+#             f"user_{blog.author.id}",
+#             {
+#                 "type": "send_notification",
+#                 "content": {
+#                     "message": f"{request.user.username} commented on your blog",
+#                     "blog_id": blog.id,
+#                     "notification_type": "comment",
+#                 }
+#             }
+#         )
+
+#     return Response({"detail": "Comment created successfully."})
+
+
+# new Add Comment logic for the Websocket
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def add_comment(request, blog_id):
-    blog = get_object_or_404(Blog, id=blog_id)
-    content = request.data.get('content')
-    if not content:
-        return Response({'error': 'Content is required'}, status=status.HTTP_400_BAD_REQUEST)
+    """
+    Add a new comment or reply to a blog.
+    Real-time WebSocket notifications + DB notifications handled automatically via signals.
+    """
+    try:
+        user = request.user
+        blog = get_object_or_404(Blog, id=blog_id)
 
-    comment = Comment.objects.create(
-        user=request.user, blog=blog, content=content)
+        # 🟣 Accept 'content' or fallback to 'text'
+        content = request.data.get('content') or request.data.get('text')
+        parent_id = request.data.get('parent_id')
 
-    if blog.author != request.user:
-        Notification.objects.create(
-            user=blog.author,
-            sender=request.user,
-            notification_type='comment',
-            blog=blog,
-            message=f"{request.user.username} commented on your blog"
-        )
+        # 🛑 Validate
+        if not content or not str(content).strip():
+            return Response(
+                {"error": "Content is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # Optional: real-time channels notification
-        channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            f"user_{blog.author.id}",
+        with transaction.atomic():
+            # 🟣 Optional threaded comment support
+            parent_comment = None
+            if parent_id:
+                parent_comment = Comment.objects.filter(id=parent_id, blog=blog).first()
+                if not parent_comment:
+                    return Response(
+                        {"error": "Parent comment not found."},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+            # 🟣 Create the comment
+            comment = Comment.objects.create(
+                user=user,
+                blog=blog,
+                content=content.strip(),
+                parent=parent_comment
+            )
+
+        # ✅ Signals (in signals.py) handle:
+        # - Real-time WebSocket updates
+        # - Sending notification to the blog author
+        # So we don’t manually call Channels here.
+
+        return Response(
             {
-                "type": "send_notification",
-                "content": {
-                    "message": f"{request.user.username} commented on your blog",
+                "detail": "Comment created successfully.",
+                "comment": {
+                    "id": comment.id,
+                    "user": user.username,
+                    "content": comment.content,
+                    "parent_id": comment.parent.id if comment.parent else None,
                     "blog_id": blog.id,
-                    "notification_type": "comment",
-                }
-            }
+                    "created_at": comment.created_at,
+                },
+            },
+            status=status.HTTP_201_CREATED,
         )
 
-    return Response({"detail": "Comment created successfully."})
+    except Exception as e:
+        print("❌ Comment Error:", str(e))
+        return Response(
+            {"error": "Failed to add comment."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
 
 
 # Comment Delete Views
@@ -1116,6 +1248,46 @@ def trending_blogs_admin(request):
     return Response(serializer.data)
 
 
+
+
+#  admin_blog_list_view
+@api_view(["GET"])
+@permission_classes([permissions.IsAdminUser])
+def admin_blog_list_view(request):
+    """
+    ✅ Admin Blog List API
+    Shows all blogs regardless of status, with search, filter & sorting
+    """
+    blogs = Blog.objects.all().select_related("category", "author").prefetch_related("tags").order_by("-created_at")
+
+    search = request.query_params.get("search", "")
+    status = request.query_params.get("status", "")
+    sort = request.query_params.get("sort", "")  # ✅ New
+
+    if search:
+        blogs = blogs.filter(Q(title__icontains=search) | Q(author__username__icontains=search))
+
+    if status:
+        blogs = blogs.filter(status=status)
+
+    # ✅ Sorting Logic
+    if sort == "asc":
+        blogs = blogs.order_by("created_at")
+    elif sort == "desc":
+        blogs = blogs.order_by("-created_at")
+    elif sort == "a-z":
+        blogs = blogs.order_by("title")
+    elif sort == "z-a":
+        blogs = blogs.order_by("-title")
+
+    paginator = BlogPagination()
+    paginated_blogs = paginator.paginate_queryset(blogs, request)
+    serializer = BlogSerializer(paginated_blogs, many=True, context={"request": request})
+    return paginator.get_paginated_response(serializer.data)
+
+
+
+
 # Approved Blogs
 @api_view(['POST'])
 @permission_classes([IsAdminUser])  # only admin/editor
@@ -1146,14 +1318,33 @@ def flag_blog(request, blog_id):
 
 # Admin Comments
 #  Admin can see all comments
+from rest_framework.pagination import PageNumberPagination
+
+class CommentPagination(PageNumberPagination):
+    page_size = 10  # 👈 ek page me 10 comments dikhe
+    page_size_query_param = "page_size"  # optional: user decide kar sake kitne chahiye
+    max_page_size = 100  # limit to avoid heavy loads
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdminUser])
 def get_all_comments_view(request):
+    """
+    ✅ Paginated Admin Comment List
+    - Only accessible by Admin users
+    - Supports ?page=1, ?page=2 etc.
+    """
     comments = Comment.objects.all().order_by('-created_at')
-    serializer = CommentSerializer(comments, many=True)
-    return Response(serializer.data)
+
+    # 🔹 Apply pagination
+    paginator = CommentPagination()
+    paginated_comments = paginator.paginate_queryset(comments, request)
+
+    # 🔹 Serialize the paginated data
+    serializer = CommentSerializer(paginated_comments, many=True, context={'request': request})
+
+    # 🔹 Return paginated response (includes next/prev URLs)
+    return paginator.get_paginated_response(serializer.data)
 
 #  Admin can approve a comment
 
@@ -1182,14 +1373,26 @@ def comment_delete_view(request, pk):
     return Response({'message': 'Comment deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
 
 
-# -------------------------------
-# GET all admin notifications
-# -------------------------------
 @api_view(['GET'])
 def get_admin_notifications(request):
     notifications = Notification.objects.all().order_by('-created_at')
-    serializer = NotificationSerializer(notifications, many=True)
-    return Response(serializer.data)
+
+    # ✅ Custom Pagination
+    paginator = PageNumberPagination()
+    paginator.page_size = 9  # 9 per page
+    paginated_notifications = paginator.paginate_queryset(notifications, request)
+
+    serializer = NotificationSerializer(paginated_notifications, many=True)
+
+    # ✅ Return response with pagination meta info
+    return Response({
+        "results": serializer.data,
+        "total_pages": paginator.page.paginator.num_pages,
+        "current_page": paginator.page.number,
+        "total_notifications": paginator.page.paginator.count,
+        "has_next": paginator.page.has_next(),
+        "has_previous": paginator.page.has_previous(),
+    })
 
 # -------------------------------
 # PATCH: Mark notification as read
@@ -1221,19 +1424,24 @@ def delete_notification(request, pk):
         return Response({"error": "Notification not found"}, status=status.HTTP_404_NOT_FOUND)
 
 
-# ------------------------------
-# List All Reactions (Admin)
-# ------------------------------
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def reactions_list(request):
     """
-    GET /api/admin/reactions/
-    Returns a list of all reactions for the admin dashboard.
+    GET /api/admin/reactions/?page=1
+    Returns paginated list of all reactions for the admin dashboard.
     """
-    reactions = Reaction.objects.select_related('user', 'blog').all()
-    serializer = ReactionSerializer(reactions, many=True)
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    reactions = Reaction.objects.select_related('user', 'blog').all().order_by('-id')
+    
+    # ✅ Pagination logic
+    paginator = PageNumberPagination()
+    paginator.page_size = 9  # one page me 9 reactions dikhayenge
+    paginated_reactions = paginator.paginate_queryset(reactions, request)
+    
+    serializer = ReactionSerializer(paginated_reactions, many=True)
+    
+    # ✅ Return paginated response
+    return paginator.get_paginated_response(serializer.data)
 
 
 # ------------------------------
@@ -1401,6 +1609,25 @@ def stats(request):
         'daily_users': daily_users,
         'monthly_users': monthly_users,
     })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminUser])
+def get_dashboard_stats(request):
+    """
+    GET /api/admin/dashboard/stats/
+    Returns overall dashboard statistics for admin panel.
+    """
+    data = {
+        "users": User.objects.count(),
+        "blogs": Blog.objects.count(),
+        "categories": Category.objects.count(),
+        "comments": Comment.objects.count(),
+        "notifications": Notification.objects.count(),
+        "reactions": Reaction.objects.count(),
+    }
+    return Response(data)
+
 
 
 
